@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIGE-GE — Banco de la Nación</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar__brand">
+                <svg class="sidebar__logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                <span class="sidebar__title">SIGE-GE</span>
+            </div>
+            <nav class="sidebar__nav" id="sidebar-nav"></nav>
+            <button id="sidebar-toggle" class="sidebar__toggle" aria-label="Colapsar sidebar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+            </button>
+        </aside>
+        <div class="main-wrapper">
+            <header class="topbar">
+                <span id="page-title" class="topbar__title">Dashboard</span>
+                <span id="status-badge" class="badge badge--loading">conectando…</span>
+            </header>
+            <main id="main-content"></main>
+        </div>
+    </div>
+    <div id="toast-container"></div>
+    <div id="modal-overlay" class="modal-overlay" style="display:none;"></div>
+    <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+# ─── Python ───────────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# ─── Tests ────────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ─── Datos locales (nunca al repo) ────────────────────────────────────────────
+data/
+*.db
+*.xlsx
+*.xls
+
+# ─── Configuración local con secretos ─────────────────────────────────────────
+config/settings.toml
+.env
+*.env
+
+# ─── Binarios y artefactos de despliegue ──────────────────────────────────────
+tools/uv.exe
+tools/python/
+dist/
+
+# ─── Agentes IA (solo desarrollo) ─────────────────────────────────────────────
+.claude/
+CLAUDE.md
+AGENTS.md
+.context-map.json
+
+# ─── IDE ──────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
