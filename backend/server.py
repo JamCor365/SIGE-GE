@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 
@@ -32,6 +33,8 @@ async def on_startup(app: web.Application) -> None:
     else:
         app["storage"] = get_backend(cfg)
     await init_db(app, app.get("_test_db_path"))
+    if hasattr(app["storage"], "warmup"):
+        asyncio.ensure_future(app["storage"].warmup())
     log.info("SIGE-GE iniciado — storage: %s", cfg["storage"]["mode"])
 
 

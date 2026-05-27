@@ -89,6 +89,13 @@ class SharePointBackend(StorageBackend):
         log.info("SharePoint context listo — site: %s", self._site_url)
         return self._context
 
+    async def warmup(self) -> None:
+        try:
+            await self._ensure_context()
+            log.info("SharePoint warmup completado")
+        except Exception as exc:
+            log.warning("SharePoint warmup falló (se reintentará en la primera llamada): %s", exc)
+
     async def close(self) -> None:
         if self._context is not None:
             try:
