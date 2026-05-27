@@ -38,7 +38,8 @@ if (-not (Test-Path $settingsPath)) {
     "data\mock_sharepoint\events_processed",
     "data\mock_sharepoint\events_error",
     "data\mock_sharepoint\master",
-    "data\pending_local"
+    "data\pending_local",
+    "data\edge_profile"
 ) | ForEach-Object {
     New-Item -ItemType Directory -Force -Path (Join-Path $PSScriptRoot $_) | Out-Null
 }

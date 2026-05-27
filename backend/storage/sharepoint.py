@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import time
+from pathlib import Path
 from urllib.parse import quote, urlparse
 
 from playwright.async_api import BrowserContext, async_playwright
@@ -59,10 +60,9 @@ class SharePointBackend(StorageBackend):
         if self._context is not None:
             return self._context
 
-        import os
-        # Edge guarda los perfiles en %LOCALAPPDATA%\Microsoft\Edge\User Data
-        local_appdata = os.environ.get("LOCALAPPDATA", "")
-        user_data_dir = os.path.join(local_appdata, "Microsoft", "Edge", "User Data")
+        # Perfil aislado dentro del proyecto — evita conflicto con Edge del usuario
+        project_root = Path(__file__).resolve().parent.parent.parent
+        user_data_dir = str(project_root / "data" / "edge_profile")
 
         self._playwright = await async_playwright().start()
         self._context = await self._playwright.chromium.launch_persistent_context(
