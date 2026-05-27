@@ -29,6 +29,12 @@ class LocalFolderBackend(StorageBackend):
     async def list_pending(self) -> list[str]:
         return [f.stem for f in sorted(self._pending.glob("*.json"))]
 
+    async def download_event(self, event_id: str) -> dict | None:
+        path = self._pending / f"{event_id}.json"
+        if not path.exists():
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))
+
     async def mark_processed(self, event_id: str) -> None:
         src = self._pending / f"{event_id}.json"
         if src.exists():

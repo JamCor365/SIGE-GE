@@ -3,6 +3,8 @@ import logging
 
 from aiohttp import web
 
+from backend.sync_engine import apply_remote_events
+
 log = logging.getLogger("sige.sync")
 
 
@@ -63,3 +65,16 @@ async def list_pending(request: web.Request) -> web.Response:
             "events": events,
         }
     )
+
+
+async def apply_pending(request: web.Request) -> web.Response:
+    storage = request.app["storage"]
+
+    if hasattr(storage, "ready") and not storage.ready:
+        return web.json_response(
+            {"status": "error", "reason": "Storage no listo aún, espera unos segundos"},
+            status=503,
+        )
+
+    result = await apply_remote_events(request.app["db"], storage)
+    return web.json_response({"status": "ok", **result})
