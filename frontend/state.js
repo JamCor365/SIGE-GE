@@ -1,0 +1,47 @@
+export const state = {
+    dashboard: {
+        stats: null,
+        gruposPorMacro: [],
+        pendingEvents: 0,
+    },
+    grupos: {
+        list: [],
+        filtered: [],
+        page: 1,
+        perPage: 50,
+        filters: { macroregion: "", estado: "", busqueda: "" },
+        detail: null,
+        macroregiones: [],
+        sedes: [],
+    },
+    sedes: {
+        list: [],
+        filtered: [],
+        page: 1,
+        perPage: 50,
+        filters: { busqueda: "" },
+        detail: null,
+        macroregiones: [],
+    },
+    macroregiones: {
+        list: [],
+        filtered: [],
+        page: 1,
+        perPage: 50,
+        filters: { busqueda: "" },
+        detail: null,
+    },
+    tta: {
+        list: [],
+        filtered: [],
+        page: 1,
+        perPage: 50,
+        filters: { busqueda: "" },
+        detail: null,
+        sedes: [],
+    },
+    sync: {
+        pendingCount: 0,
+        events: [],
+    },
+};

@@ -1,0 +1,17 @@
+[app]
+version = "1.0.0"
+host    = "localhost"
+port    = 8080
+
+[storage]
+# "local" → LocalFolderBackend (desarrollo, sin SharePoint)
+# "sharepoint" → SharePointBackend (banco, requiere Playwright)
+mode = "local"
+
+[storage.local]
+base_path = "data/mock_sharepoint"
+
+[storage.sharepoint]
+site_url     = "https://bancodelanacion.sharepoint.com/sites/SERVICIOSGENERALES663"
+base_path    = "Documentos compartidos/.../GRUPO ELECTROGENO/SIGE_GE"
+edge_profile = "Default"
