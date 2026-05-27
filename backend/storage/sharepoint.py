@@ -53,6 +53,11 @@ class SharePointBackend(StorageBackend):
         self._digest_ts: float = 0.0
 
         self._folders_ensured = False
+        self._ready: bool = False
+
+    @property
+    def ready(self) -> bool:
+        return self._ready
 
     # ── Ciclo de vida ─────────────────────────────────────────────────────────
 
@@ -92,6 +97,7 @@ class SharePointBackend(StorageBackend):
     async def warmup(self) -> None:
         try:
             await self._ensure_context()
+            self._ready = True
             log.info("SharePoint warmup completado")
         except Exception as exc:
             log.warning("SharePoint warmup falló (se reintentará en la primera llamada): %s", exc)

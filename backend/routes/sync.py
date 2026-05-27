@@ -10,6 +10,14 @@ async def list_pending(request: web.Request) -> web.Response:
     db = request.app["db"]
     storage = request.app["storage"]
 
+    if hasattr(storage, "ready") and not storage.ready:
+        return web.json_response({
+            "status": "initializing",
+            "pending_storage": -1,
+            "pending_db": 0,
+            "events": [],
+        })
+
     try:
         pending_storage = len(await storage.list_pending())
     except Exception as exc:
