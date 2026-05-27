@@ -23,7 +23,6 @@ config/settings.toml
 *.env
 
 # ─── Binarios y artefactos de despliegue ──────────────────────────────────────
-tools/uv.exe
 tools/python/
 dist/
 
