@@ -9,6 +9,9 @@ class StorageBackend(ABC):
     async def download_snapshot(self) -> dict | None: ...
 
     @abstractmethod
+    async def download_event(self, event_id: str) -> dict | None: ...
+
+    @abstractmethod
     async def list_pending(self) -> list[str]: ...
 
     @abstractmethod

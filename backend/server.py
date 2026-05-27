@@ -78,6 +78,7 @@ def create_app() -> web.Application:
     app.router.add_delete("/api/tta/{id}", tta.delete_tta)
 
     app.router.add_get("/api/sync/pending", sync.list_pending)
+    app.router.add_post("/api/sync/apply", sync.apply_pending)
 
     app.router.add_get("/", serve_index)
     app.router.add_static("/", FRONTEND)

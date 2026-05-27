@@ -250,6 +250,21 @@ class SharePointBackend(StorageBackend):
             if item.get("Name", "").endswith(".json")
         ]
 
+    async def download_event(self, event_id: str) -> dict | None:
+        url = (
+            f"{self._site_url}/_api/web"
+            f"/GetFileByServerRelativeUrl('{self._pending_rel}/{quote(event_id)}.json')/$value"
+        )
+        result = await self._api("GET", url, headers={"Accept": "*/*"})
+        if result is None:
+            return None
+        raw = result if isinstance(result, bytes) else result.encode()
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except Exception as exc:
+            log.warning("download_event: JSON inválido para %s — %s", event_id, exc)
+            return None
+
     async def mark_processed(self, event_id: str) -> None:
         filename    = f"{event_id}.json"
         source_rel  = self._pending_rel   + "/" + quote(filename)
