@@ -36,6 +36,9 @@ async def on_startup(app: web.Application) -> None:
 
 
 async def on_cleanup(app: web.Application) -> None:
+    storage = app.get("storage")
+    if storage is not None and hasattr(storage, "close"):
+        await storage.close()
     await close_db(app)
     log.info("SIGE-GE detenido")
 
