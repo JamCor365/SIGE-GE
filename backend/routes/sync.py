@@ -10,7 +10,11 @@ async def list_pending(request: web.Request) -> web.Response:
     db = request.app["db"]
     storage = request.app["storage"]
 
-    pending_storage = len(await storage.list_pending())
+    try:
+        pending_storage = len(await storage.list_pending())
+    except Exception as exc:
+        log.warning("list_pending falló (storage no disponible): %s", exc)
+        pending_storage = -1
 
     async with db.execute(
         "SELECT COUNT(*) FROM events_log WHERE synced = 0"
