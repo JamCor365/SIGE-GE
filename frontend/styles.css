@@ -624,6 +624,17 @@ tr.clickable {
     min-height: 80px;
 }
 
+.form-value-static {
+    display: block;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid #ccc;
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+    background: var(--color-bg);
+    color: var(--color-neutral);
+    font-family: monospace;
+}
+
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {

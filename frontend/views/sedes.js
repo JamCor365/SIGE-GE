@@ -5,6 +5,7 @@ import { renderTable } from "../components/table.js";
 import { renderPagination } from "../components/pagination.js";
 import { openModal, createModalHeader, createModalFooter } from "../components/modal.js";
 import { showToast } from "../toast.js";
+import { buildFormFields, buildPayload } from "./_form_helpers.js";
 
 const COLUMNS = [
     { header: "Código", key: "codigo" },
@@ -207,7 +208,7 @@ async function openSedeModal(sede = null) {
     form.id = "sede-form";
 
     const fields = [
-        { name: "id", label: "ID", type: "number", required: true, readonly: isEdit },
+        { name: "id", label: "ID", type: "number", required: true },
         { name: "codigo", label: "Código", type: "text", required: true },
         { name: "nombre_agencia", label: "Nombre Agencia", type: "text", required: true },
         { name: "macroregion_id", label: "Macroregión", type: "select", required: true, options: state.sedes.macroregiones.map(m => ({ value: m.id, label: m.nombre })) },
@@ -219,59 +220,27 @@ async function openSedeModal(sede = null) {
         { name: "observaciones", label: "Observaciones", type: "textarea", fullWidth: true },
     ];
 
-    fields.forEach(f => {
-        const group = document.createElement("div");
-        group.className = "form-group" + (f.fullWidth ? " full-width" : "");
-        const label = document.createElement("label");
-        label.textContent = f.label + (f.required ? " *" : "");
-        group.appendChild(label);
-        let input;
-        if (f.type === "select") {
-            input = document.createElement("select");
-            input.name = f.name;
-            input.innerHTML = `<option value="">— Seleccionar —</option>` +
-                (f.options || []).map(o => `<option value="${o.value}">${o.label}</option>`).join("");
-        } else if (f.type === "textarea") {
-            input = document.createElement("textarea");
-            input.name = f.name;
-            input.rows = 3;
-        } else {
-            input = document.createElement("input");
-            input.type = f.type;
-            input.name = f.name;
-        }
-        if (f.readonly) input.readOnly = true;
-        if (isEdit && sede[f.name] !== undefined && sede[f.name] !== null) {
-            input.value = sede[f.name];
-        }
-        group.appendChild(input);
-        form.appendChild(group);
-    });
-
-    body.appendChild(form);
+    buildFormFields(form, fields, sede, isEdit);
 
     const footer = createModalFooter([
         (() => { const b = document.createElement("button"); b.className = "btn btn--secondary"; b.type = "button"; b.textContent = "Cancelar"; b.addEventListener("click", () => modal.close()); return b; })(),
         (() => { const b = document.createElement("button"); b.className = "btn btn--primary"; b.type = "submit"; b.textContent = isEdit ? "Guardar cambios" : "Crear Sede"; return b; })(),
     ]);
+    footer.style.gridColumn = "1 / -1";
+    form.appendChild(footer);
+    body.appendChild(form);
 
     const modalRoot = document.createElement("div");
     modalRoot.appendChild(createModalHeader(title, () => modal.close()));
     modalRoot.appendChild(body);
-    modalRoot.appendChild(footer);
     const modal = openModal(modalRoot);
 
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const fd = new FormData(form);
-        const payload = {};
-        fields.forEach(f => {
-            const v = fd.get(f.name);
-            if (v !== "" && v !== null && v !== undefined) {
-                payload[f.name] = f.type === "number" ? Number(v) : v;
-            }
-        });
-        const required = ["id", "codigo", "nombre_agencia", "macroregion_id"];
+        const payload = buildPayload(form, fields, isEdit);
+        const required = isEdit
+            ? ["codigo", "nombre_agencia", "macroregion_id"]
+            : ["id", "codigo", "nombre_agencia", "macroregion_id"];
         const missing = required.filter(k => payload[k] === undefined || payload[k] === "");
         if (missing.length) {
             showToast("Campos obligatorios: " + missing.join(", "), "error");
@@ -290,6 +259,7 @@ async function openSedeModal(sede = null) {
                 renderSedesList();
             }
         } catch (err) {
+            console.error(err);
             showToast("Error: " + (err.message || ""), "error");
         }
     });

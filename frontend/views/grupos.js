@@ -5,6 +5,7 @@ import { renderTable } from "../components/table.js";
 import { renderPagination } from "../components/pagination.js";
 import { openModal, createModalHeader, createModalFooter } from "../components/modal.js";
 import { showToast } from "../toast.js";
+import { buildFormFields, buildPayload } from "./_form_helpers.js";
 
 const COLUMNS = [
     { header: "Cód. Margesi", key: "cod_margesi" },
@@ -288,7 +289,7 @@ async function openGrupoModal(grupo = null) {
     form.id = "grupo-form";
 
     const fields = [
-        { name: "id", label: "ID", type: "number", required: true, readonly: isEdit },
+        { name: "id", label: "ID", type: "number", required: true },
         { name: "sede_id", label: "Sede", type: "select", required: true, options: sedes.map(s => ({ value: s.id, label: `${s.codigo} — ${s.nombre_agencia}` })) },
         { name: "cod_margesi", label: "Código Margesi", type: "text" },
         { name: "estado", label: "Estado", type: "select", required: true, options: [{ value: "OPERATIVO", label: "OPERATIVO" }, { value: "INOPERATIVO", label: "INOPERATIVO" }] },
@@ -312,35 +313,7 @@ async function openGrupoModal(grupo = null) {
         { name: "observaciones", label: "Observaciones", type: "textarea", fullWidth: true },
     ];
 
-    fields.forEach(f => {
-        const group = document.createElement("div");
-        group.className = "form-group" + (f.fullWidth ? " full-width" : "");
-        const label = document.createElement("label");
-        label.textContent = f.label + (f.required ? " *" : "");
-        group.appendChild(label);
-        let input;
-        if (f.type === "select") {
-            input = document.createElement("select");
-            input.name = f.name;
-            input.innerHTML = `<option value="">— Seleccionar —</option>` +
-                (f.options || []).map(o => `<option value="${o.value}">${o.label}</option>`).join("");
-        } else if (f.type === "textarea") {
-            input = document.createElement("textarea");
-            input.name = f.name;
-            input.rows = 3;
-        } else {
-            input = document.createElement("input");
-            input.type = f.type;
-            input.name = f.name;
-            if (f.step) input.step = f.step;
-        }
-        if (f.readonly) input.readOnly = true;
-        if (isEdit && grupo[f.name] !== undefined && grupo[f.name] !== null) {
-            input.value = grupo[f.name];
-        }
-        group.appendChild(input);
-        form.appendChild(group);
-    });
+    buildFormFields(form, fields, grupo, isEdit);
 
     const footer = createModalFooter([
         (() => {
@@ -371,14 +344,7 @@ async function openGrupoModal(grupo = null) {
 
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const fd = new FormData(form);
-        const payload = {};
-        fields.forEach(f => {
-            const v = fd.get(f.name);
-            if (v !== "" && v !== null && v !== undefined) {
-                payload[f.name] = f.type === "number" ? (v === "" ? undefined : Number(v)) : v;
-            }
-        });
+        const payload = buildPayload(form, fields, isEdit);
 
         if (!payload.sede_id) {
             showToast("La sede es obligatoria", "error");

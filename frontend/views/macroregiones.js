@@ -5,6 +5,7 @@ import { renderTable } from "../components/table.js";
 import { renderPagination } from "../components/pagination.js";
 import { openModal, createModalHeader, createModalFooter } from "../components/modal.js";
 import { showToast } from "../toast.js";
+import { buildFormFields, buildPayload } from "./_form_helpers.js";
 
 const COLUMNS = [
     { header: "ID", key: "id" },
@@ -186,50 +187,34 @@ function openMacroModal(item = null) {
     form.id = "macro-form";
 
     const fields = [
-        { name: "id", label: "ID", type: "number", required: true, readonly: isEdit },
+        { name: "id", label: "ID", type: "number", required: true },
         { name: "nombre", label: "Nombre", type: "text", required: true },
     ];
 
-    fields.forEach(f => {
-        const group = document.createElement("div");
-        group.className = "form-group";
-        const label = document.createElement("label");
-        label.textContent = f.label + (f.required ? " *" : "");
-        group.appendChild(label);
-        const input = document.createElement("input");
-        input.type = f.type;
-        input.name = f.name;
-        if (f.readonly) input.readOnly = true;
-        if (isEdit && item[f.name] !== undefined && item[f.name] !== null) input.value = item[f.name];
-        group.appendChild(input);
-        form.appendChild(group);
-    });
-
-    body.appendChild(form);
+    buildFormFields(form, fields, item, isEdit);
 
     const footer = createModalFooter([
         (() => { const b = document.createElement("button"); b.className = "btn btn--secondary"; b.type = "button"; b.textContent = "Cancelar"; b.addEventListener("click", () => modal.close()); return b; })(),
         (() => { const b = document.createElement("button"); b.className = "btn btn--primary"; b.type = "submit"; b.textContent = isEdit ? "Guardar cambios" : "Crear Macroregión"; return b; })(),
     ]);
+    footer.style.gridColumn = "1 / -1";
+    form.appendChild(footer);
+    body.appendChild(form);
 
     const modalRoot = document.createElement("div");
     modalRoot.appendChild(createModalHeader(title, () => modal.close()));
     modalRoot.appendChild(body);
-    modalRoot.appendChild(footer);
     const modal = openModal(modalRoot);
 
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const fd = new FormData(form);
-        const payload = {};
-        fields.forEach(f => {
-            const v = fd.get(f.name);
-            if (v !== "" && v !== null && v !== undefined) {
-                payload[f.name] = f.type === "number" ? Number(v) : v;
-            }
-        });
-        if (payload.id === undefined || payload.nombre === undefined) {
-            showToast("ID y nombre son obligatorios", "error");
+        const payload = buildPayload(form, fields, isEdit);
+        if (!isEdit && payload.id === undefined) {
+            showToast("El ID es obligatorio", "error");
+            return;
+        }
+        if (payload.nombre === undefined) {
+            showToast("El nombre es obligatorio", "error");
             return;
         }
         try {
@@ -245,6 +230,7 @@ function openMacroModal(item = null) {
                 renderMacroregionesList();
             }
         } catch (err) {
+            console.error(err);
             showToast("Error: " + (err.message || ""), "error");
         }
     });

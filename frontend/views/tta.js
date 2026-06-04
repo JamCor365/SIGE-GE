@@ -5,6 +5,7 @@ import { renderTable } from "../components/table.js";
 import { renderPagination } from "../components/pagination.js";
 import { openModal, createModalHeader, createModalFooter } from "../components/modal.js";
 import { showToast } from "../toast.js";
+import { buildFormFields, buildPayload } from "./_form_helpers.js";
 
 const COLUMNS = [
     { header: "Cód. Margesi", key: "cod_margesi" },
@@ -212,7 +213,7 @@ async function openTTAModal(item = null) {
     form.id = "tta-form";
 
     const fields = [
-        { name: "id", label: "ID", type: "number", required: true, readonly: isEdit },
+        { name: "id", label: "ID", type: "number", required: true },
         { name: "sede_id", label: "Sede", type: "select", required: true, options: state.tta.sedes.map(s => ({ value: s.id, label: `${s.codigo} — ${s.nombre_agencia}` })) },
         { name: "cod_margesi", label: "Código Margesi", type: "text" },
         { name: "marca", label: "Marca", type: "text" },
@@ -224,32 +225,7 @@ async function openTTAModal(item = null) {
         { name: "observaciones", label: "Observaciones", type: "textarea", fullWidth: true },
     ];
 
-    fields.forEach(f => {
-        const group = document.createElement("div");
-        group.className = "form-group" + (f.fullWidth ? " full-width" : "");
-        const label = document.createElement("label");
-        label.textContent = f.label + (f.required ? " *" : "");
-        group.appendChild(label);
-        let input;
-        if (f.type === "select") {
-            input = document.createElement("select");
-            input.name = f.name;
-            input.innerHTML = `<option value="">— Seleccionar —</option>` +
-                (f.options || []).map(o => `<option value="${o.value}">${o.label}</option>`).join("");
-        } else if (f.type === "textarea") {
-            input = document.createElement("textarea");
-            input.name = f.name;
-            input.rows = 3;
-        } else {
-            input = document.createElement("input");
-            input.type = f.type;
-            input.name = f.name;
-        }
-        if (f.readonly) input.readOnly = true;
-        if (isEdit && item[f.name] !== undefined && item[f.name] !== null) input.value = item[f.name];
-        group.appendChild(input);
-        form.appendChild(group);
-    });
+    buildFormFields(form, fields, item, isEdit);
 
     const footer = createModalFooter([
         (() => { const b = document.createElement("button"); b.className = "btn btn--secondary"; b.type = "button"; b.textContent = "Cancelar"; b.addEventListener("click", () => modal.close()); return b; })(),
@@ -266,14 +242,7 @@ async function openTTAModal(item = null) {
 
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const fd = new FormData(form);
-        const payload = {};
-        fields.forEach(f => {
-            const v = fd.get(f.name);
-            if (v !== "" && v !== null && v !== undefined) {
-                payload[f.name] = f.type === "number" ? Number(v) : v;
-            }
-        });
+        const payload = buildPayload(form, fields, isEdit);
         if (!payload.sede_id) {
             showToast("La sede es obligatoria", "error");
             return;
@@ -291,6 +260,7 @@ async function openTTAModal(item = null) {
                 renderTTAList();
             }
         } catch (err) {
+            console.error(err);
             showToast("Error: " + (err.message || ""), "error");
         }
     });
