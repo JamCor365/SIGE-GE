@@ -50,8 +50,17 @@ async def serve_index(request: web.Request) -> web.Response:
     return web.FileResponse(FRONTEND / "index.html")
 
 
+@web.middleware
+async def no_cache_middleware(request: web.Request, handler) -> web.Response:
+    response = await handler(request)
+    if not request.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 def create_app() -> web.Application:
-    app = web.Application()
+    app = web.Application(middlewares=[no_cache_middleware])
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
 
