@@ -4,12 +4,16 @@
 #
 # Instalación: bash tools_scripts/install-hooks.sh
 
-PATTERN="claude|anthropic|chatgpt|openai|copilot|ai-generated|co-authored-by|noreply@anthropic\.com|agentes ia"
+PATTERN="clau""de|anthrop""ic|chatg""pt|open""ai|cop""ilot|ai-gen""erated|co-auth""ored-by|noreply@anthrop""ic\.com|agentes ia"
 
 echo "[pre-push] Verificando referencias a IA..."
 
-# 1. Archivos rastreados por git
-dirty=$(git ls-files | xargs grep -ilE "$PATTERN" 2>/dev/null)
+# 1. Archivos rastreados por git (excluye los propios scripts de verificación)
+dirty=$(git ls-files \
+    | grep -v "^tools_scripts/check-ai-refs\.sh$" \
+    | grep -v "^tools_scripts/hooks/" \
+    | grep -v "^tools_scripts/install-hooks\.sh$" \
+    | xargs grep -ilE "$PATTERN" 2>/dev/null)
 if [ -n "$dirty" ]; then
     echo "[pre-push] BLOQUEADO — referencias en archivos del repo:"
     echo "$dirty"
