@@ -222,10 +222,44 @@ class SharePointBackend(StorageBackend):
                 raise
         log.debug("Evento subido: %s", event_id)
 
-    async def download_snapshot(self) -> dict | None:
+    async def upload_snapshot(self, db_bytes: bytes, meta: dict) -> None:
+        db_url = (
+            f"{self._site_url}/_api/web"
+            f"/GetFolderByServerRelativeUrl('{self._master_rel}')"
+            f"/Files/add(url='latest_snapshot.db',overwrite=true)"
+        )
+        await self._api(
+            "POST", db_url,
+            headers={"Content-Type": "application/octet-stream"},
+            data=db_bytes,
+        )
+        meta_content = json.dumps(meta, ensure_ascii=False, indent=2).encode("utf-8")
+        meta_url = (
+            f"{self._site_url}/_api/web"
+            f"/GetFolderByServerRelativeUrl('{self._master_rel}')"
+            f"/Files/add(url='snapshot_meta.json',overwrite=true)"
+        )
+        await self._api(
+            "POST", meta_url,
+            headers={"Content-Type": "application/octet-stream"},
+            data=meta_content,
+        )
+        log.debug("Snapshot subido a master/")
+
+    async def download_snapshot_db(self) -> bytes | None:
         url = (
             f"{self._site_url}/_api/web"
-            f"/GetFileByServerRelativeUrl('{self._master_rel}/latest_snapshot.json')/$value"
+            f"/GetFileByServerRelativeUrl('{self._master_rel}/latest_snapshot.db')/$value"
+        )
+        result = await self._api("GET", url, headers={"Accept": "*/*"})
+        if result is None:
+            return None
+        return result if isinstance(result, bytes) else None
+
+    async def download_snapshot_meta(self) -> dict | None:
+        url = (
+            f"{self._site_url}/_api/web"
+            f"/GetFileByServerRelativeUrl('{self._master_rel}/snapshot_meta.json')/$value"
         )
         result = await self._api("GET", url, headers={"Accept": "*/*"})
         if result is None:
@@ -234,7 +268,7 @@ class SharePointBackend(StorageBackend):
         try:
             return json.loads(raw.decode("utf-8"))
         except Exception as exc:
-            log.warning("download_snapshot: JSON inválido — %s", exc)
+            log.warning("download_snapshot_meta: JSON inválido — %s", exc)
             return None
 
     async def list_pending(self) -> list[str]:

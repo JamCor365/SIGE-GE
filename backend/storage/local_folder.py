@@ -20,11 +20,24 @@ class LocalFolderBackend(StorageBackend):
         target = self._pending / f"{event_id}.json"
         target.write_text(json.dumps(event, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    async def download_snapshot(self) -> dict | None:
-        snapshot = self._master / "latest_snapshot.json"
-        if not snapshot.exists():
+    async def upload_snapshot(self, db_bytes: bytes, meta: dict) -> None:
+        (self._master / "latest_snapshot.db").write_bytes(db_bytes)
+        (self._master / "snapshot_meta.json").write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    async def download_snapshot_db(self) -> bytes | None:
+        path = self._master / "latest_snapshot.db"
+        return path.read_bytes() if path.exists() else None
+
+    async def download_snapshot_meta(self) -> dict | None:
+        path = self._master / "snapshot_meta.json"
+        if not path.exists():
             return None
-        return json.loads(snapshot.read_text(encoding="utf-8"))
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
 
     async def list_pending(self) -> list[str]:
         return [f.stem for f in sorted(self._pending.glob("*.json"))]
