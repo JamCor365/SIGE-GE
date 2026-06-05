@@ -3,7 +3,7 @@ import logging
 
 from aiohttp import web
 
-from backend.sync_engine import apply_remote_events
+from backend.sync_engine import apply_remote_events, retry_pending_uploads
 
 log = logging.getLogger("sige.sync")
 
@@ -76,5 +76,6 @@ async def apply_pending(request: web.Request) -> web.Response:
             status=503,
         )
 
-    result = await apply_remote_events(request.app["db"], storage)
-    return web.json_response({"status": "ok", **result})
+    upload_result = await retry_pending_uploads(request.app["db"], storage)
+    apply_result  = await apply_remote_events(request.app["db"], storage)
+    return web.json_response({"status": "ok", **upload_result, **apply_result})

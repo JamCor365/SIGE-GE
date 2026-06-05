@@ -1,14 +1,16 @@
 """
-Motor de sincronización entrante: aplica eventos remotos de SharePoint al cache.db local.
+Motor de sincronización: sube eventos locales pendientes y aplica eventos remotos.
 
 Modelo:
 - Cada PC rastrea qué event_ids ya conoce (en events_log).
-- Al sincronizar, descarga todos los eventos de events_pending/ en SharePoint.
-- Aplica solo los que no están en events_log local (nuevos de otras máquinas).
-- Los eventos propios ya están en events_log (se registraron al crearse) → se saltan.
+- Ciclo completo al sincronizar:
+    1. retry_pending_uploads: reintenta subir eventos locales con synced=0.
+    2. apply_remote_events:   descarga events_pending/ y aplica los desconocidos.
 - events_pending/ en SharePoint nunca se borra desde el cliente.
 """
+import json
 import logging
+from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 
@@ -71,6 +73,61 @@ async def _apply_one(db: aiosqlite.Connection, event: dict) -> None:
 
     else:
         raise ValueError(f"Acción desconocida: {action!r}")
+
+
+async def retry_pending_uploads(db: aiosqlite.Connection, storage) -> dict:
+    """
+    Reintenta subir a SharePoint los eventos que quedaron synced=0.
+    - Éxito  → synced=1, synced_at actualizado, error_msg limpio.
+    - Fallo  → error_msg actualizado, synced sigue en 0, continúa con el resto.
+    upload_event usa overwrite=true, así que reintentar un evento ya subido es seguro.
+    """
+    uploaded = 0
+    upload_failed = 0
+
+    async with db.execute(
+        """
+        SELECT event_id, entity, action, entity_id, created_at,
+               created_by, machine, app_version, payload_json
+        FROM events_log
+        WHERE synced = 0
+        ORDER BY created_at ASC
+        """
+    ) as cur:
+        rows = await cur.fetchall()
+
+    for row in rows:
+        event = {
+            "event_id":    row["event_id"],
+            "entity":      row["entity"],
+            "action":      row["action"],
+            "entity_id":   row["entity_id"],
+            "created_at":  row["created_at"],
+            "created_by":  row["created_by"],
+            "machine":     row["machine"],
+            "app_version": row["app_version"],
+            "payload":     json.loads(row["payload_json"]),
+        }
+        try:
+            await storage.upload_event(event)
+            synced_at = datetime.now(timezone(offset=timedelta(hours=-5))).isoformat()
+            await db.execute(
+                "UPDATE events_log SET synced=1, synced_at=?, error_msg=NULL WHERE event_id=?",
+                (synced_at, row["event_id"]),
+            )
+            await db.commit()
+            uploaded += 1
+            log.info("Evento resubido: %s", row["event_id"])
+        except Exception as exc:
+            await db.execute(
+                "UPDATE events_log SET error_msg=? WHERE event_id=?",
+                (str(exc), row["event_id"]),
+            )
+            await db.commit()
+            upload_failed += 1
+            log.warning("Reintento fallido para %s: %s", row["event_id"], exc)
+
+    return {"uploaded": uploaded, "upload_failed": upload_failed}
 
 
 async def apply_remote_events(db: aiosqlite.Connection, storage) -> dict:

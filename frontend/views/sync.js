@@ -79,14 +79,18 @@ async function _doSync(btn) {
     btn.textContent = "Sincronizando…";
     try {
         const res = await api.post("/sync/apply");
-        const { applied, skipped, errors } = res;
-        if (errors.length > 0) {
-            showToast(`Sync completado con errores: ${applied} aplicados, ${errors.length} errores`, "warning");
-        } else if (applied === 0) {
-            showToast("Todo al día — no hay cambios nuevos de otras máquinas", "success");
-        } else {
-            showToast(`${applied} cambio(s) aplicado(s) desde otras máquinas`, "success");
-        }
+        const { uploaded = 0, upload_failed = 0, applied = 0, errors = [] } = res;
+
+        const parts = [];
+        if (uploaded > 0)      parts.push(`${uploaded} cambio(s) subido(s)`);
+        if (upload_failed > 0) parts.push(`${upload_failed} error(es) al subir`);
+        if (applied > 0)       parts.push(`${applied} cambio(s) de otras máquinas aplicado(s)`);
+
+        const hasErrors = upload_failed > 0 || errors.length > 0;
+        const msg = parts.length
+            ? parts.join(" · ")
+            : "Todo al día — no hay cambios pendientes";
+        showToast(msg, hasErrors ? "warning" : "success");
         await renderSync();
     } catch (err) {
         showToast("Error al sincronizar: " + (err.message || ""), "error");
