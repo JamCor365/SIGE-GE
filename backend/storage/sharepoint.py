@@ -147,7 +147,10 @@ class SharePointBackend(StorageBackend):
             headers["X-RequestDigest"] = await self._get_digest()
         resp = await ctx.request.fetch(url, method=method, headers=headers, **kwargs)
         if resp.status == 404:
-            return None
+            if method == "GET":
+                return None
+            body = await resp.text()
+            raise RuntimeError(f"SharePoint {method} {url} → 404: {body[:200]}")
         if not resp.ok:
             body = await resp.text()
             raise RuntimeError(f"SharePoint {method} {url} → {resp.status}: {body[:200]}")
