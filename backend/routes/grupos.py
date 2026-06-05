@@ -121,7 +121,7 @@ async def create_grupo(request: web.Request) -> web.Response:
 
     event_payload = dict(grupo)
     event_payload["_entity"] = "grupo_electrogeno"
-    user = get_user(request)
+    user = get_user(request.app["config"])
     event = make_event("create", payload["id"], event_payload, user, request.app["config"]["app"]["version"])
     try:
         await request.app["storage"].upload_event(event)
@@ -165,7 +165,7 @@ async def update_grupo(request: web.Request) -> web.Response:
 
     event_payload = dict(payload)
     event_payload["_entity"] = "grupo_electrogeno"
-    user = get_user(request)
+    user = get_user(request.app["config"])
     event = make_event("update", grupo_id, event_payload, user, request.app["config"]["app"]["version"])
     try:
         await request.app["storage"].upload_event(event)
@@ -195,7 +195,7 @@ async def delete_grupo(request: web.Request) -> web.Response:
     log.info("Grupo dado de baja: %s", grupo_id)
 
     event_payload = {"activo": 0, "_entity": "grupo_electrogeno"}
-    user = get_user(request)
+    user = get_user(request.app["config"])
     event = make_event("delete", grupo_id, event_payload, user, request.app["config"]["app"]["version"])
     try:
         await request.app["storage"].upload_event(event)

@@ -57,7 +57,7 @@ async def create_macroregion(request: web.Request) -> web.Response:
 
     event_payload = dict(item)
     event_payload["_entity"] = "macroregion"
-    user = get_user(request)
+    user = get_user(request.app["config"])
     event = make_event("create", payload["id"], event_payload, user, request.app["config"]["app"]["version"])
     try:
         await request.app["storage"].upload_event(event)
@@ -98,7 +98,7 @@ async def update_macroregion(request: web.Request) -> web.Response:
 
     event_payload = dict(payload)
     event_payload["_entity"] = "macroregion"
-    user = get_user(request)
+    user = get_user(request.app["config"])
     event = make_event("update", item_id, event_payload, user, request.app["config"]["app"]["version"])
     try:
         await request.app["storage"].upload_event(event)
@@ -126,7 +126,7 @@ async def delete_macroregion(request: web.Request) -> web.Response:
     log.info("Macroregión dada de baja: %s", item_id)
 
     event_payload = {"activo": 0, "_entity": "macroregion"}
-    user = get_user(request)
+    user = get_user(request.app["config"])
     event = make_event("delete", item_id, event_payload, user, request.app["config"]["app"]["version"])
     try:
         await request.app["storage"].upload_event(event)

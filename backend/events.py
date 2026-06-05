@@ -1,10 +1,9 @@
+import getpass
 import json
 import logging
 import platform
 import secrets
 from datetime import datetime, timedelta, timezone
-
-from aiohttp import web
 
 log = logging.getLogger("sige.events")
 
@@ -53,9 +52,14 @@ def make_event(
     }
 
 
-def get_user(request: web.Request) -> str:
-    user = request.headers.get("X-SIGE-User", "").strip()
-    return user if user else "SIGE_LOCAL"
+def get_user(config: dict) -> str:
+    user = config.get("app", {}).get("user", "").strip()
+    if user:
+        return user
+    try:
+        return getpass.getuser()
+    except Exception:
+        return platform.node() or "LOCAL"
 
 
 async def log_event(

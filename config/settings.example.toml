@@ -2,6 +2,7 @@
 version = "1.0.0"
 host    = "localhost"
 port    = 8080
+user    = ""   # override opcional; vacío = automático (usuario del SO)
 
 [storage]
 # "local" → LocalFolderBackend (desarrollo, sin SharePoint)
