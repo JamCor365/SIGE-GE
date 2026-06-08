@@ -48,7 +48,17 @@ class LocalFolderBackend(StorageBackend):
             return None
         return json.loads(path.read_text(encoding="utf-8"))
 
+    # DEPRECATED: no usado desde Fase 1, ver archive_processed
     async def mark_processed(self, event_id: str) -> None:
         src = self._pending / f"{event_id}.json"
         if src.exists():
             shutil.move(str(src), self._processed / f"{event_id}.json")
+
+    async def archive_processed(self, event_id: str) -> None:
+        src = self._pending / f"{event_id}.json"
+        if not src.exists():
+            return                                   # ya archivado → idempotente
+        # copy(overwrite) → unlink: si crashea entre medio, la próxima corrida
+        # re-copia (overwrite) y re-borra sin error.
+        shutil.copy2(str(src), str(self._processed / f"{event_id}.json"))
+        src.unlink()

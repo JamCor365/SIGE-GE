@@ -312,6 +312,7 @@ class SharePointBackend(StorageBackend):
             log.warning("download_event: JSON inválido para %s — %s", event_id, exc)
             return None
 
+    # DEPRECATED: no usado desde Fase 1, ver archive_processed
     async def mark_processed(self, event_id: str) -> None:
         filename    = f"{event_id}.json"
         source_rel  = self._pending_rel   + "/" + quote(filename)
@@ -323,3 +324,48 @@ class SharePointBackend(StorageBackend):
         )
         await self._api("POST", url)
         log.debug("Evento procesado: %s", event_id)
+
+    async def archive_processed(self, event_id: str) -> None:
+        """Copia pending → processed (overwrite) y luego borra de pending.
+
+        Idempotente: usa copy+delete en vez de moveto para que una re-corrida
+        tras un crash re-copie (overwrite) y re-borre sin fallar. Si pending ya
+        no tiene el archivo (404), asume que la corrida previa lo archivó.
+        """
+        filename = f"{event_id}.json"
+        # 1. Leer bytes de pending; si ya no está → ya archivado.
+        get_url = (
+            f"{self._site_url}/_api/web"
+            f"/GetFileByServerRelativeUrl('{self._pending_rel}/{quote(filename)}')/$value"
+        )
+        raw = await self._api("GET", get_url, headers={"Accept": "*/*"})
+        if raw is None:
+            return
+        data = raw if isinstance(raw, bytes) else raw.encode()
+
+        # 2. Subir a processed/ con overwrite (re-copiar es seguro).
+        add_url = (
+            f"{self._site_url}/_api/web"
+            f"/GetFolderByServerRelativeUrl('{self._processed_rel}')"
+            f"/Files/add(url='{quote(filename)}',overwrite=true)"
+        )
+        await self._api(
+            "POST", add_url,
+            headers={"Content-Type": "application/octet-stream"},
+            data=data,
+        )
+
+        # 3. Borrar de pending. Ignorar 404 (re-corrida tras crash post-delete).
+        del_url = (
+            f"{self._site_url}/_api/web"
+            f"/GetFileByServerRelativeUrl('{self._pending_rel}/{quote(filename)}')"
+        )
+        try:
+            await self._api(
+                "POST", del_url,
+                headers={"X-HTTP-Method": "DELETE", "IF-MATCH": "*"},
+            )
+        except RuntimeError as exc:
+            if "404" not in str(exc) and "does not exist" not in str(exc).lower():
+                raise
+        log.debug("Evento archivado: %s", event_id)

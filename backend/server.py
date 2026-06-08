@@ -9,7 +9,7 @@ FRONTEND = Path("frontend")
 from backend.config import load_config
 from backend.db import close_db, init_db
 from backend.routes import grupos, macroregiones, sedes, sync, tta
-from backend.snapshot import _maybe_generate_snapshot, apply_post_snapshot_events, bootstrap_if_new
+from backend.snapshot import _maybe_generate_snapshot, apply_post_snapshot_events, recover_state
 from backend.storage import get_backend
 
 log = logging.getLogger("sige.server")
@@ -36,17 +36,20 @@ async def on_startup(app: web.Application) -> None:
 
     is_test = app.get("_test_db_path") is not None
 
-    # Bootstrap: solo en máquinas nuevas (cache.db de 0 bytes), sincrónico
-    snap_meta = None
+    # Recuperación de estado (sincrónica, antes de init_db): máquina nueva
+    # (cache.db de 0 bytes) o atrasada (local_max < snapshot.last_event_id).
+    recovery = None
     if not is_test:
-        snap_meta = await bootstrap_if_new(app["storage"])
+        recovery = await recover_state(app["storage"], config=cfg)
 
     await init_db(app, app.get("_test_db_path"))
 
-    # Aplicar eventos posteriores al snapshot en la máquina recién restaurada
-    if snap_meta is not None:
-        await apply_post_snapshot_events(app["db"], app["storage"], snap_meta)
-        print("Restauración completada. Base de datos lista.", flush=True)
+    # Aplicar la unión (pending > last_event_id) ∪ local_events tras la recuperación.
+    if recovery is not None:
+        await apply_post_snapshot_events(
+            app["db"], app["storage"], recovery.meta, recovery.local_events
+        )
+        print("Recuperación completada. Base de datos lista.", flush=True)
 
     # Warmup + generación de snapshot en background (una sola tarea encadenada:
     # el snapshot DEBE correr después del warmup para reusar el contexto de
