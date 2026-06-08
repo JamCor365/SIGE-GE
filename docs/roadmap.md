@@ -71,7 +71,9 @@ Los 24 tests deben pasar en cada fase.
 
 ---
 
-#### Fase 2 — Snapshot en `master/` ⬜
+#### Fase 2 — Snapshot en `master/` ✅
+
+**Estado:** ✅ VERIFICADA EN BANCO (2026-06-08). `latest_snapshot.db` y `snapshot_meta.json` se generan correctamente; `last_event_id` coincide con el último evento real. Bug de race condition en `_ensure_context` resuelto (commit `ff50a1a`).
 
 **Objetivo:** una máquina nueva arranca desde un snapshot del estado actual en lugar de replayar toda la historia de `events_pending/`.
 
@@ -87,21 +89,32 @@ Los 24 tests deben pasar en cada fase.
 
 ---
 
-#### Fase 3 — Archivado a `events_processed/` ⬜
+#### Fase 3 — Archivado a `events_processed/` 🟡
+
+**Estado:** 🟡 IMPLEMENTADA Y COMMITEADA (commit `3c369e7`), 41/41 tests pasando. Pendiente de verificación en banco:
+- **Pieza 1 — archivado** (`event_id <= snap_last` AND ∈ `events_log` local): pendiente de verificar en banco — esperando el primer arranque del 2026-06-09 que dispare snapshot + archivado en el camino SharePoint real.
+- **Pieza 2 — recuperación de máquina atrasada** (`recover_state`): pendiente — requiere una SEGUNDA máquina para probar el escenario P2P real; no verificable con una sola workstation.
 
 **Objetivo:** evitar que `events_pending/` crezca sin límite. Mover eventos capturados por el snapshot a `events_processed/` para auditoría OCI.
 
 **Solo seguro después de Fase 2.** Razón: `list_pending()` es hoy el único mecanismo de descubrimiento de eventos. Archivar antes de tener snapshot rompe la recuperación de máquinas nuevas.
 
-**Diseño preliminar:**
-- Archivar eventos cuyo `event_id` sea anterior al `event_id` del snapshot vigente.
-- Regla de corte: por cantidad (cuando `pending/` supere N archivos) — se adapta al ritmo de uso real, no a un calendario fijo.
-- `mark_processed()` ya está implementado en ambos backends; solo falta llamarlo desde `sync_engine.py`.
+**Diseño implementado (commit `3c369e7`):**
+
+**Pieza 1 — archivado:**
+- Elegibilidad (Decisión A): archivar los eventos de `events_pending/` cuyo `event_id <= snap_last` **AND** que estén en el `events_log` local. Como el snapshot ES la DB local al momento del backup, "∈ `events_log`" ≡ "contenido en el snapshot": excluye los pending de otras máquinas aún no aplicados y los `synced=0` inyectados por un re-bootstrap.
+- Disparo: dentro de `_maybe_generate_snapshot`, **solo después** de confirmar `latest_snapshot.db` + `snapshot_meta.json` en `master/` (nunca antes).
+- `mark_processed()` quedó **DEPRECADO** (sin uso desde Fase 1). El archivado usa el nuevo `archive_processed()`: copia a `events_processed/` con overwrite y luego borra de `events_pending/` — **idempotente** (si crashea entre copia y borrado, la próxima corrida re-copia y re-borra sin error).
 - Los archivos en `events_processed/` quedan planos (sin subcarpetas por fecha); la fecha ya está en el nombre del archivo.
+
+**Pieza 2 — recuperación de máquina atrasada:**
+- `recover_state()` generaliza `bootstrap_if_new`: además del caso máquina nueva (`cache.db` de 0 bytes), cubre la máquina atrasada (`local_max_event_id < snapshot.last_event_id`).
+- Secuencia crash-safe (orden obligatorio): 1) subir los `synced=0` locales a `events_pending/` **antes** de tocar `cache.db` (si algún upload falla, aborta sin tocar `cache.db` para no perder cambios); 2) bajar `latest_snapshot.db`; 3) reemplazo **atómico** de `cache.db` (temp + `os.replace`, sidecars `-wal`/`-shm` borrados); 4) aplicar la unión ordenada (Decisión B).
+- Aplicación (Decisión B): `apply_post_snapshot_events` aplica la unión ordenada por `event_id` de (`events_pending/` con `id > last_event_id`) ∪ (los `synced=0` capturados), deduplicada por pertenencia a `events_log`. Esto re-aplica los `synced=0` aunque su `id <= snap_last`.
 
 **Decisión tomada:** NO archivar por consenso entre máquinas. Razón: una máquina apagada indefinidamente bloquearía el archivado de todas. Rompe el modelo P2P offline-first.
 
-**Archivos afectados:** `backend/sync_engine.py`, potencialmente `backend/storage/base.py`.
+**Archivos afectados:** `backend/snapshot.py`, `backend/server.py`, `backend/storage/base.py`, `backend/storage/local_folder.py`, `backend/storage/sharepoint.py`, `tests/test_snapshot.py`.
 
 ---
 
