@@ -163,7 +163,10 @@ async def _maybe_generate_snapshot(app) -> None:
     try:
         meta = await storage.download_snapshot_meta()
     except Exception as exc:
-        log.warning("Snapshot: no se pudo leer meta — %s", exc)
+        log.warning(
+            "Snapshot: download_snapshot_meta() falló al leer master/snapshot_meta.json"
+            " — %s: %s", type(exc).__name__, exc,
+        )
         return
 
     today = datetime.now(TZ).date()

@@ -48,14 +48,22 @@ async def on_startup(app: web.Application) -> None:
         await apply_post_snapshot_events(app["db"], app["storage"], snap_meta)
         print("Restauración completada. Base de datos lista.", flush=True)
 
-    # Generación de snapshot en background (una vez por sesión, no bloquea)
+    # Warmup + generación de snapshot en background (una sola tarea encadenada:
+    # el snapshot DEBE correr después del warmup para reusar el contexto de
+    # SharePoint ya construido, no relanzar launch_persistent_context).
     if not is_test:
         app["_snapshot_done"] = False
-        asyncio.ensure_future(_maybe_generate_snapshot(app))
-
-    if hasattr(app["storage"], "warmup"):
-        asyncio.ensure_future(app["storage"].warmup())
+    asyncio.ensure_future(_bg_startup(app, is_test))
     log.info("SIGE-GE iniciado — storage: %s", cfg["storage"]["mode"])
+
+
+async def _bg_startup(app: web.Application, is_test: bool) -> None:
+    """Warmup primero (si el backend lo soporta), luego snapshot. En modo
+    test/local el backend no expone warmup → se salta y solo corre snapshot."""
+    if hasattr(app["storage"], "warmup"):
+        await app["storage"].warmup()
+    if not is_test:
+        await _maybe_generate_snapshot(app)
 
 
 async def on_cleanup(app: web.Application) -> None:

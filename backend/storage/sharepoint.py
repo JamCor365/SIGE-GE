@@ -48,6 +48,10 @@ class SharePointBackend(StorageBackend):
 
         self._context: BrowserContext | None = None
         self._playwright = None
+        # Serializa el lazy-init del contexto: el perfil persistente de Edge es
+        # single-instance, dos launch_persistent_context concurrentes contra el
+        # mismo user_data_dir colisionan (exitCode=21).
+        self._ctx_lock = asyncio.Lock()
 
         self._digest: str | None = None
         self._digest_ts: float = 0.0
@@ -65,34 +69,40 @@ class SharePointBackend(StorageBackend):
         if self._context is not None:
             return self._context
 
-        # Perfil aislado dentro del proyecto — evita conflicto con Edge del usuario
-        project_root = Path(__file__).resolve().parent.parent.parent
-        user_data_dir = str(project_root / "data" / "edge_profile")
+        async with self._ctx_lock:
+            # Doble-check: otra corrutina pudo construir el contexto mientras
+            # esperábamos el lock.
+            if self._context is not None:
+                return self._context
 
-        self._playwright = await async_playwright().start()
-        self._context = await self._playwright.chromium.launch_persistent_context(
-            user_data_dir=user_data_dir,
-            channel="msedge",
-            headless=True,
-            args=[
-                f"--profile-directory={self._edge_profile}",
-                "--disable-extensions",
-                "--no-first-run",
-                "--disable-background-networking",
-            ],
-        )
+            # Perfil aislado dentro del proyecto — evita conflicto con Edge del usuario
+            project_root = Path(__file__).resolve().parent.parent.parent
+            user_data_dir = str(project_root / "data" / "edge_profile")
 
-        # Warm-up: abre el site para que SSO/cookies de sesión estén activos
-        page = await self._context.new_page()
-        try:
-            await page.goto(self._site_url, wait_until="domcontentloaded", timeout=30_000)
-        except Exception as exc:
-            log.warning("SharePoint warm-up: %s", exc)
-        finally:
-            await page.close()
+            self._playwright = await async_playwright().start()
+            self._context = await self._playwright.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                channel="msedge",
+                headless=True,
+                args=[
+                    f"--profile-directory={self._edge_profile}",
+                    "--disable-extensions",
+                    "--no-first-run",
+                    "--disable-background-networking",
+                ],
+            )
 
-        log.info("SharePoint context listo — site: %s", self._site_url)
-        return self._context
+            # Warm-up: abre el site para que SSO/cookies de sesión estén activos
+            page = await self._context.new_page()
+            try:
+                await page.goto(self._site_url, wait_until="domcontentloaded", timeout=30_000)
+            except Exception as exc:
+                log.warning("SharePoint warm-up: %s", exc)
+            finally:
+                await page.close()
+
+            log.info("SharePoint context listo — site: %s", self._site_url)
+            return self._context
 
     async def warmup(self) -> None:
         try:
