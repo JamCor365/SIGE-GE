@@ -118,15 +118,33 @@ Los 24 tests deben pasar en cada fase.
 
 ---
 
-#### Fase 4 — `events_error/` ⬜
+#### Fase 4 — `events_error/` y robustez de aplicación
+
+Dos ítems de la misma familia: persistir lo que falla y no perder updates que llegan fuera de orden.
+
+##### 4a — `events_error/` ⬜ (prioridad baja)
 
 **Objetivo:** persistir en `events_error/` los eventos que fallaron al procesarse (hoy van solo al log de Python y se pierden al reiniciar).
 
-**Última prioridad.** No hay casos de error en producción que justifiquen priorizar esto antes que las fases anteriores.
+**Prioridad baja.** No hay casos de error en producción que justifiquen priorizarlo antes que las fases anteriores.
 
 **Diseño preliminar:** al capturar excepción en `apply_remote_events`, subir el JSON original a `events_error/{event_id}.json` con un campo adicional `error` y `failed_at`. La carpeta ya existe en ambos backends.
 
 **Archivos afectados:** `backend/sync_engine.py`, `backend/storage/base.py` (nuevo método `upload_error`), ambos backends.
+
+##### 4b — Hardening de orden: update/delete que llega antes que su create 🔴 PRIORIDAD ALTA
+
+**Qué es (agujero real, confirmado en el código):** cuando `_apply_one` aplica un `update` o `delete` cuyo `WHERE id = X` no encuentra fila (porque el `create` aún no llegó), afecta **0 filas sin error**, y `apply_remote_events` lo registra igual en `events_log` con `synced=1` (aplica y loguea sin mirar filas afectadas, `sync_engine.py:156-157`). El evento queda "consumido". Cuando el `create` llega después, se inserta con `INSERT OR IGNORE` la versión **vieja** de la entidad y el `update` ya no se re-aplica → **el cambio se pierde en silencio**.
+
+El orden lexicográfico de `event_id` (≡ cronológico) cubre el caso normal en que ambos eventos están presentes al sincronizar. El hueco se abre solo en **subida parcial**: el `create` falla al subir (queda `synced=0`, no está en SharePoint) mientras un `update` posterior sube OK, y otra máquina sincroniza en esa ventana.
+
+**Por qué importa AHORA y no "algún día":** `contrato` es la PRIMERA entidad que se **crea y edita activamente de forma distribuida** desde la UI. Los maestros (`grupo_electrogeno`, `sede`, etc.) se cargaron en bloque desde el Excel y casi no se tocan desde la UI — por eso nunca expusieron este hueco, aunque el motor lo tiene desde siempre. El riesgo se materializa con el uso intensivo multi-máquina de contratos.
+
+**Prioridad: ALTA.** Debe resolverse ANTES de que el flujo multi-máquina de contratos sea de uso intensivo en producción, no después.
+
+**Esbozo del fix (NO implementar aún — requiere diseño):** si un `update`/`delete` afecta 0 filas, NO marcarlo `synced=1` → queda pendiente y se re-aplica cuando llegue el `create`. **Matiz a resolver en el diseño:** un `update`/`delete` genuinamente huérfano (fila que nunca existirá) se reintentaría en cada sync indefinidamente → necesita tope (reintentos limitados / expiración / mandar a `events_error/` tras N intentos). No es one-liner; conecta con 4a.
+
+**Archivos afectados (previstos):** `backend/sync_engine.py` (`_apply_one` debe reportar filas afectadas; `apply_remote_events` decide logueo), posiblemente `events_log` (contador de intentos), `backend/snapshot.py` (`apply_post_snapshot_events` comparte `_apply_one`).
 
 ---
 
@@ -136,3 +154,38 @@ Los 24 tests deben pasar en cada fase.
 |----------|-------|
 | NO archivado por consenso entre máquinas | Una máquina apagada indefinidamente congela el archivado de todas — rompe el P2P offline-first |
 | NO resolución de nombre completo vía Outlook/AD | Se pospone para un instalador futuro junto con la config del link de SharePoint |
+
+---
+
+## RamaF — Contratos de mantenimiento/adquisición de GE
+
+### Objetivo
+
+Modelar los contratos que "cuelgan" alrededor de los GE. Un contrato es **dato, no estructura**: nace y termina, se modela con una tabla + campo `estado`, no con tabs dedicados. Los GE son permanentes; los contratos, temporales.
+
+### Decisiones de diseño tomadas
+
+| Decisión | Razón |
+|----------|-------|
+| PK = UUID (`id TEXT` = `uuid4().hex`, generado en backend) | Entidad creada de forma distribuida: dos máquinas offline no deben colisionar ids de fila al sincronizar. AUTOINCREMENT colisiona (silenciosamente, vía `INSERT OR IGNORE`); el id natural no aplica porque el `numero` es editable y a veces ausente. |
+| `numero` UNIQUE pero NULLABLE | Es el identificador humano (nº de proceso), pero editable (se corrige entre convocatoria y adjudicación) y puede faltar (registro durante procura, antes de adjudicar). Varios NULL no violan UNIQUE en SQLite. |
+| Adjuntos (actas, informes) NO en SQLite | Van en SharePoint; la tabla guardará solo el enlace/ruta (cuando se diseñe). No inflar la base ni romper el sync. |
+| Vínculo GE↔contrato como tabla puente N:M `contrato_ge` (PASO 2+) | Un GE pasa por varios contratos en el tiempo y un contrato cubre muchos GE. NO se modela todavía. |
+
+### Pasos
+
+#### PASO 1 — Backend de contratos ✅ COMPLETADO
+
+- Tabla `contratos` con PK UUID, `numero` UNIQUE nullable, `estado` CHECK (`VIGENTE`,`CULMINADO`,`RESUELTO`), `tipo_objeto` CHECK (`MANTENIMIENTO`,`ADQUISICION`,`ADQUISICION_INSTALACION`). Creada en `db.py` vía `CREATE TABLE IF NOT EXISTS` (igual que `events_log`) para que la `cache.db` ya poblada del banco la cree en el próximo arranque sin migración manual.
+- `"contrato"` añadido a `_VALID_ENTITIES` (`events.py`) y a `_ENTITY_TABLE` (`sync_engine.py`). El motor de sync genérico maneja create/update/delete sin cambios.
+- CRUD en `routes/contratos.py`: el UUID se genera en el backend al crear (no en frontend); el evento se emite con `entity_id = ese UUID`.
+- 12 tests nuevos (UUID, `numero` nullable/unique, CHECKs, apply remoto create/update/delete). Total suite: 53 en verde.
+- **Sin UI. Sin vínculo GE↔contrato.** Ver hardening 4b: el uso intensivo multi-máquina de contratos es lo que materializa el hueco de orden — resolverlo antes de producción intensiva.
+
+#### PASO 2 — CRUD frontend de contratos ⬜ PENDIENTE
+
+Vista lista/detalle + formulario, metiendo el tab "Contratos" como un item más en el sidebar **plano** actual (feo pero funcional). Validar crear/listar/editar + sync cargando Valtom y AT Energy como dos filas reales.
+
+#### PASO 3 — Reagrupación de tabs en grupos/subgrupos ⬜ PENDIENTE
+
+Cambio **cosmético** aparte, en su propio commit (no mezclar con funcional). Jerarquía aprobada: Maestros / Contratos / Operación. El grupo **Reportes** NO se crea hasta que exista RamaD (`/export`).
