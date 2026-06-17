@@ -23,6 +23,7 @@ _ENTITY_TABLE = {
     "sede": "sedes",
     "macroregion": "macroregiones",
     "tta": "tta",
+    "contrato": "contratos",
 }
 
 

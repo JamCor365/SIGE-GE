@@ -8,7 +8,7 @@ FRONTEND = Path("frontend")
 
 from backend.config import load_config
 from backend.db import close_db, init_db
-from backend.routes import grupos, macroregiones, sedes, sync, tta
+from backend.routes import contratos, grupos, macroregiones, sedes, sync, tta
 from backend.snapshot import _maybe_generate_snapshot, apply_post_snapshot_events, recover_state
 from backend.storage import get_backend
 
@@ -116,6 +116,12 @@ def create_app() -> web.Application:
     app.router.add_post("/api/tta", tta.create_tta)
     app.router.add_put("/api/tta/{id}", tta.update_tta)
     app.router.add_delete("/api/tta/{id}", tta.delete_tta)
+
+    app.router.add_get("/api/contratos", contratos.list_contratos)
+    app.router.add_get("/api/contratos/{id}", contratos.get_contrato)
+    app.router.add_post("/api/contratos", contratos.create_contrato)
+    app.router.add_put("/api/contratos/{id}", contratos.update_contrato)
+    app.router.add_delete("/api/contratos/{id}", contratos.delete_contrato)
 
     app.router.add_get("/api/sync/pending", sync.list_pending)
     app.router.add_post("/api/sync/apply", sync.apply_pending)
