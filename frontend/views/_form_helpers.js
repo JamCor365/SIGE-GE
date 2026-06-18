@@ -30,6 +30,23 @@ export function buildFormFields(container, fields, record, isEdit) {
             el.innerHTML = `<option value="">— Seleccionar —</option>` +
                 (f.options || []).map(o => `<option value="${o.value}">${o.label}</option>`).join("");
             if (record?.[f.name] !== undefined && record[f.name] !== null) el.value = record[f.name];
+        } else if (f.type === "multiselect") {
+            // Conjunto multivalor de tokens (checkbox group). El record trae un array.
+            el = document.createElement("div");
+            el.className = "form-multiselect";
+            const selected = new Set(Array.isArray(record?.[f.name]) ? record[f.name] : []);
+            (f.options || []).forEach(o => {
+                const lbl = document.createElement("label");
+                lbl.className = "form-check";
+                const cb = document.createElement("input");
+                cb.type = "checkbox";
+                cb.name = f.name;
+                cb.value = o.value;
+                if (selected.has(o.value)) cb.checked = true;
+                lbl.appendChild(cb);
+                lbl.appendChild(document.createTextNode(" " + o.label));
+                el.appendChild(lbl);
+            });
         } else if (f.type === "textarea") {
             el = document.createElement("textarea");
             el.name = f.name;
@@ -59,6 +76,11 @@ export function buildPayload(form, fields, isEdit) {
     const payload = {};
     fields.forEach(f => {
         if (isEdit && NEVER_IN_UPDATE.has(f.name)) return;
+        if (f.type === "multiselect") {
+            // Siempre presente (incluso []) para permitir limpiar la selección al editar.
+            payload[f.name] = fd.getAll(f.name);
+            return;
+        }
         const v = fd.get(f.name);
         if (v !== "" && v !== null && v !== undefined) {
             payload[f.name] = f.type === "number" ? Number(v) : v;

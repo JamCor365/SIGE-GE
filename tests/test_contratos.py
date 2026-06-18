@@ -1,3 +1,8 @@
+import json
+
+from aiohttp import web
+
+from backend.db import init_db
 from backend.sync_engine import _apply_one
 
 
@@ -42,12 +47,65 @@ async def test_estado_check_rechaza_valor_invalido(client):
     assert r.status == 400
 
 
-async def test_tipo_objeto_acepta_adquisicion_instalacion(client):
+async def test_tipos_objeto_multivalor_devuelve_array(client):
     r = await client.post(
         "/api/contratos",
-        json={"objeto": "Valtom", "tipo_objeto": "ADQUISICION_INSTALACION"},
+        json={"objeto": "Valtom", "tipos_objeto": ["ADQUISICION", "INSTALACION", "MANTENIMIENTO"]},
     )
     assert r.status == 201
+    data = (await r.json())["data"]
+    # La API devuelve un array (orden canónico = ordenado, sin duplicados).
+    assert data["tipos_objeto"] == ["ADQUISICION", "INSTALACION", "MANTENIMIENTO"]
+
+
+async def test_tipos_objeto_rechaza_token_invalido(client):
+    r = await client.post(
+        "/api/contratos",
+        json={"objeto": "X", "tipos_objeto": ["ADQUISICION", "NO_EXISTE"]},
+    )
+    assert r.status == 400
+
+
+async def test_tipos_objeto_dedupe_y_canonico(client):
+    r = await client.post(
+        "/api/contratos",
+        json={"objeto": "X", "tipos_objeto": ["MANTENIMIENTO", "ADQUISICION", "ADQUISICION"]},
+    )
+    assert r.status == 201
+    assert (await r.json())["data"]["tipos_objeto"] == ["ADQUISICION", "MANTENIMIENTO"]
+
+
+async def test_procedimiento_seleccion_rechaza_valor_invalido(client):
+    r = await client.post(
+        "/api/contratos",
+        json={"objeto": "X", "procedimiento_seleccion": "RIFA"},
+    )
+    assert r.status == 400
+
+
+async def test_montos_centimos_enteros(client):
+    r = await client.post(
+        "/api/contratos",
+        json={"objeto": "Valtom", "monto_principal": 1019000000, "monto_accesorio": 109000000},
+    )
+    assert r.status == 201
+    data = (await r.json())["data"]
+    assert data["monto_principal"] == 1019000000
+    assert data["monto_accesorio"] == 109000000
+
+
+async def test_monto_rechaza_no_entero(client):
+    r = await client.post(
+        "/api/contratos",
+        json={"objeto": "X", "monto_principal": 10190000.50},
+    )
+    assert r.status == 400
+
+
+async def test_ambito_y_tipo_objeto_ya_no_existen(client):
+    # Campos eliminados en el rediseño general → no permitidos.
+    assert (await client.post("/api/contratos", json={"objeto": "X", "ambito": "Lima"})).status == 400
+    assert (await client.post("/api/contratos", json={"objeto": "X", "tipo_objeto": "ADQUISICION"})).status == 400
 
 
 async def test_update_y_get(client):
@@ -113,3 +171,40 @@ async def test_apply_remote_update_y_delete_contrato(client):
     })
     await db.commit()
     assert (await (await client.get(f"/api/contratos/{cid}")).json())["data"]["activo"] == 0
+
+
+async def test_tipos_objeto_round_trip_sync(client, tmp_path):
+    """tipos_objeto multivalor debe fluir IDÉNTICO: columna origen → evento →
+    columna en otra cache.db (apply_remote). Si la serialización difiere, el
+    array se corrompería al sincronizar entre máquinas."""
+    tipos = ["ADQUISICION", "INSTALACION", "MANTENIMIENTO"]
+    canonical = json.dumps(sorted(tipos))  # forma canónica almacenada/transportada
+
+    r = await client.post("/api/contratos", json={"objeto": "Valtom", "tipos_objeto": tipos})
+    cid = (await r.json())["data"]["id"]
+
+    # 1) El evento emitido (events_log.payload_json) lleva el STRING canónico.
+    db = client.app["db"]
+    async with db.execute(
+        "SELECT payload_json FROM events_log WHERE entity_id = ? AND action = 'create'", (cid,)
+    ) as cur:
+        payload = json.loads((await cur.fetchone())["payload_json"])
+    assert payload["tipos_objeto"] == canonical
+
+    # 2) La columna origen guarda exactamente ese mismo string.
+    async with db.execute("SELECT tipos_objeto FROM contratos WHERE id = ?", (cid,)) as cur:
+        assert (await cur.fetchone())[0] == canonical
+
+    # 3) Aplicar el evento en OTRA cache.db reconstruye el array idéntico.
+    app2 = web.Application()
+    await init_db(app2, tmp_path / "remote.db")
+    db2 = app2["db"]
+    event = {"entity": "contrato", "action": "create", "entity_id": cid, "payload": payload}
+    await _apply_one(db2, event)
+    await db2.commit()
+    async with db2.execute("SELECT tipos_objeto FROM contratos WHERE id = ?", (cid,)) as cur:
+        remote_raw = (await cur.fetchone())[0]
+    await db2.close()
+
+    assert remote_raw == canonical                  # string idéntico en columna remota
+    assert json.loads(remote_raw) == sorted(tipos)  # array reconstruido idéntico

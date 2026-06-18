@@ -642,6 +642,35 @@ tr.clickable {
     border-color: var(--color-accent);
 }
 
+/* Checkbox-group (multiselect): cada opción en su propia fila,
+   checkbox a la izquierda y etiqueta a la derecha, alineados. */
+.form-multiselect {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.25rem;
+}
+
+.form-group .form-check {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.9rem;        /* consistente con inputs del form, no con el título del campo */
+    font-weight: 400;         /* sin la negrita de las etiquetas de campo */
+    color: var(--color-base);
+    cursor: pointer;
+}
+
+/* El checkbox no hereda el width:100%/padding/border de los inputs del form. */
+.form-group .form-check input[type="checkbox"] {
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    border: none;
+    flex: 0 0 auto;
+}
+
 /* ── Toast ── */
 #toast-container {
     position: fixed;
