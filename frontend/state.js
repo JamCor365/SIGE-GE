@@ -40,6 +40,14 @@ export const state = {
         detail: null,
         sedes: [],
     },
+    contratos: {
+        list: [],
+        filtered: [],
+        page: 1,
+        perPage: 50,
+        filters: { estado: "", busqueda: "" },
+        detail: null,
+    },
     sync: {
         pendingCount: 0,
         events: [],
