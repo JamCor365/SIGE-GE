@@ -25,6 +25,7 @@ _ENTITY_TABLE = {
     "tta": "tta",
     "contrato": "contratos",
     "contrato_ge": "contrato_ge",
+    "proveedor": "proveedores",
 }
 
 

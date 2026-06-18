@@ -201,11 +201,13 @@ La cáscara `contratos` original (PASO 1, enum `tipo_objeto` combinado, campo `a
 |---|---------|--------|
 | 1 | `contratos` (cáscara general) | ✅ `edfc471` |
 | 2 | `contrato_ge` (puente N:M + alcance derivado) | ✅ este commit |
-| 3 | `proveedores` (registro reutilizable, RUC) | ⬜ pendiente |
-| 4 | `items_contrato` (ítems adjudicados; convierte `proveedor` en derivado) | ⬜ pendiente |
+| 3 | `proveedores` (registro reutilizable; UUID PK, RUC indexado NO único, consorcio en `observaciones`) | ✅ este commit |
+| 4 | `items_contrato` (ítems adjudicados; `proveedor_id → proveedores.id`; convierte `proveedor` en derivado) | ⬜ pendiente |
 | 5 | `prestaciones` (principal/accesoria; convierte `tipos_objeto`+montos en derivados) | ⬜ pendiente |
 | 6 | `garantias` (fiel cumplimiento, etc.) | ⬜ pendiente |
 | 7 | `adendas` (adicionales ≤25%, reducciones, ampliaciones) | ⬜ pendiente |
 | 8 | `penalidades` (mora + otras) | ⬜ pendiente |
 | 9 | `servicios`/`mantenimientos` (cronograma de ejecución) | ⬜ pendiente |
 | 10 | `adjuntos` (metadata; archivos fuera de SQLite) | ⬜ pendiente |
+
+> **Principio de unicidad segura (regla del proyecto para entidades futuras).** En este modelo de sync la **única unicidad segura es la PK `id`**. El motor aplica creates remotos con `INSERT OR IGNORE`, así que un `UNIQUE` sobre una clave natural (RUC, código…) puede descartar en silencio una de dos filas creadas offline con `id` distintos; si esa fila es **target de una FK** (p.ej. `items_contrato.proveedor_id → proveedores.id`), deja FKs colgando → corrupción. Por eso toda clave natural única adicional debe ser **blanda** (dedup/aviso en la app), **salvo que nada le haga FK** (caso `contratos.numero`, que sí es `UNIQUE`). `proveedores.ruc` va indexado pero NO único. (También en AGENTS.md.)

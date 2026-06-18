@@ -215,6 +215,52 @@ async def init_db(app: web.Application, db_path: Path | None = None) -> None:
         END
         """
     )
+
+    # Proveedores: registro reutilizable de adjudicatarios (empresa o consorcio),
+    # prerequisito de items_contrato (futuro: items_contrato.proveedor_id → id).
+    #
+    # PK = UUID surrogate (como contratos): entidad creada de forma distribuida; el
+    # RUC NO sirve de PK porque es editable (typos), puede faltar al crear, y un
+    # CONSORCIO no tiene RUC propio (factura con el de un miembro), así que el RUC
+    # no es único entre filas.
+    #
+    # `ruc` indexado pero NO único a propósito. El motor aplica remotos con
+    # INSERT OR IGNORE; un UNIQUE(ruc) descartaría en silencio una de dos filas
+    # creadas offline con UUIDs distintos, y como items_contrato hará FK a este id,
+    # quedarían FKs colgando. PRINCIPIO DEL PROYECTO: la única unicidad segura en
+    # este sync es la PK `id`; toda clave natural única adicional debe ser blanda
+    # (capa de app), salvo que nada le haga FK. Dedup de RUC = aviso en la UI.
+    #
+    # Consorcio: 1 fila tipo=CONSORCIO; miembros/porcentajes en `observaciones`
+    # (excepción libre) hasta que exista la tabla hija proveedor_miembros.
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS proveedores (
+            id            TEXT    PRIMARY KEY,           -- uuid4().hex
+            ruc           TEXT,                          -- 11 dígitos; nullable/editable; en consorcio = RUC del miembro facturador
+            razon_social  TEXT    NOT NULL,
+            tipo          TEXT    CHECK (tipo IN ('PERSONA_JURIDICA','PERSONA_NATURAL','CONSORCIO') OR tipo IS NULL),
+            observaciones TEXT,
+            activo        INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
+            created_at    TEXT    NOT NULL,
+            updated_at    TEXT    NOT NULL
+        )
+        """
+    )
+    # Índice de búsqueda por RUC — NO único (ver comentario de la tabla).
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_proveedores_ruc ON proveedores(ruc)"
+    )
+    await db.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_proveedores_updated
+        AFTER UPDATE ON proveedores
+        FOR EACH ROW WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+            UPDATE proveedores SET updated_at = datetime('now','localtime') WHERE id = NEW.id;
+        END
+        """
+    )
     await db.commit()
 
     app["db"] = db
