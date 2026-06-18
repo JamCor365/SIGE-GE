@@ -203,7 +203,7 @@ La cáscara `contratos` original (PASO 1, enum `tipo_objeto` combinado, campo `a
 | 2 | `contrato_ge` (puente N:M + alcance derivado) | ✅ este commit |
 | 3 | `proveedores` (registro reutilizable; UUID PK, RUC indexado NO único, consorcio en `observaciones`) | ✅ este commit |
 | 4 | `items_contrato` (ítems adjudicados; id determinista `"{contrato_id}_{numero_item}"`; `proveedor_id → proveedores.id` nullable; ámbito derivado de `contrato_ge.item_id`) | ✅ este commit |
-| 5 | `prestaciones` (principal/accesoria; convierte `tipos_objeto`+montos en derivados) | ⬜ pendiente |
+| 5 | `prestaciones` (principal/accesoria; UUID PK —numero sintético no converge—, `item_id` opcional, `tipos_objeto` multivalor; convierte `tipos_objeto`+montos del contrato en derivados read-time) | ✅ este commit |
 | 6 | `garantias` (fiel cumplimiento, etc.) | ⬜ pendiente |
 | 7 | `adendas` (adicionales ≤25%, reducciones, ampliaciones) | ⬜ pendiente |
 | 8 | `penalidades` (mora + otras) | ⬜ pendiente |

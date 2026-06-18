@@ -310,6 +310,63 @@ async def init_db(app: web.Application, db_path: Path | None = None) -> None:
         END
         """
     )
+
+    # Prestaciones: descomposición del objeto en PRINCIPAL (única) + ACCESORIAS
+    # (0..N), cada una con su monto y sus tipos de objeto. PRINCIPAL/ACCESORIA es
+    # jerarquía contractual, NO tipo de actividad: un contrato "solo mantenimiento"
+    # tiene el mantenimiento como su PRINCIPAL.
+    #
+    # IDENTIDAD: UUID surrogate (NO determinista). numero_prestacion es invención
+    # nuestra (la ley no numera prestaciones), así que NO converge entre máquinas:
+    # un id determinista o un UNIQUE(contrato_id,numero_prestacion) haría que el
+    # INSERT OR IGNORE del motor descarte en silencio una de dos filas distintas
+    # con el mismo número → pérdida de datos, y como servicios hará FK a
+    # prestaciones.id, dejaría FKs colgando. Con UUID ambas filas sobreviven; el
+    # dedup lógico lo resuelve un humano (igual que proveedores). numero_prestacion
+    # es solo un ordinal de display, NO identidad. "Una sola PRINCIPAL" = regla
+    # BLANDA en la ruta, no UNIQUE de BD.
+    #
+    # item_id: referencia BLANDA a items_contrato.id (patrón contrato_ge).
+    # NULL = descomposición a nivel contrato (Valtom); seteado = a nivel ítem.
+    # tipos_objeto: array JSON multivalor (mismo manejo que contratos).
+    # Derivación de monto_principal/accesorio/tipos_objeto del contrato = read-time
+    # futura; el caché del contrato queda intacto.
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS prestaciones (
+            id                TEXT    PRIMARY KEY,           -- uuid4().hex
+            contrato_id       TEXT    NOT NULL REFERENCES contratos(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            item_id           TEXT,                          -- nullable; ref BLANDA a items_contrato.id (NULL = nivel contrato)
+            numero_prestacion INTEGER,                       -- ordinal de display; NO identidad (nullable)
+            clase             TEXT    NOT NULL CHECK (clase IN ('PRINCIPAL','ACCESORIA')),
+            tipos_objeto      TEXT,                          -- array JSON de tokens (validado en Python)
+            descripcion       TEXT,
+            monto             INTEGER,                       -- céntimos (S/ x 100)
+            moneda            TEXT    NOT NULL DEFAULT 'PEN',
+            plazo_dias        INTEGER,                       -- plazo de ejecución en días; nullable
+            observaciones     TEXT,
+            activo            INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
+            created_at        TEXT    NOT NULL,
+            updated_at        TEXT    NOT NULL
+        )
+        """
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_prestaciones_contrato ON prestaciones(contrato_id)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_prestaciones_item ON prestaciones(item_id)"
+    )
+    await db.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_prestaciones_updated
+        AFTER UPDATE ON prestaciones
+        FOR EACH ROW WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+            UPDATE prestaciones SET updated_at = datetime('now','localtime') WHERE id = NEW.id;
+        END
+        """
+    )
     await db.commit()
 
     app["db"] = db
