@@ -172,6 +172,49 @@ async def init_db(app: web.Application, db_path: Path | None = None) -> None:
         END
         """
     )
+
+    # Puente N:M contrato ↔ grupo electrógeno. El alcance geográfico de un
+    # contrato (macrorregiones/agencias) se DERIVA de estos vínculos vía
+    # ge → sede → macrorregión; no se almacena como campo.
+    #
+    # IDENTIDAD DE FILA: el motor de sync (_apply_one) usa una columna `id`
+    # escalar para update/delete (WHERE id = ?). Una PK compuesta (contrato_id,
+    # ge_id) no tendría columna `id` y rompería el motor. Solución: `id` es un
+    # texto DETERMINISTA del par ("{contrato_id}_{ge_id}"), de un solo campo, que
+    # el motor ya sabe leer SIN modificarlo. Determinista (no UUID aleatorio) para
+    # que dos máquinas offline que vinculen el mismo par generen el MISMO id y un
+    # desvínculo converja en todas. El par real se garantiza con UNIQUE.
+    # Borrado lógico (activo) → el delete del motor hace SET activo = 0 WHERE id.
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS contrato_ge (
+            id           TEXT    PRIMARY KEY,            -- determinista: contrato_id || '_' || ge_id
+            contrato_id  TEXT    NOT NULL REFERENCES contratos(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            ge_id        INTEGER NOT NULL REFERENCES grupos_electrogenos(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            item_id      TEXT,                           -- futuro items_contrato; por ahora siempre NULL
+            activo       INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
+            created_at   TEXT    NOT NULL,
+            updated_at   TEXT    NOT NULL,
+            UNIQUE (contrato_id, ge_id)
+        )
+        """
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_contrato_ge_contrato ON contrato_ge(contrato_id)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_contrato_ge_ge ON contrato_ge(ge_id)"
+    )
+    await db.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_contrato_ge_updated
+        AFTER UPDATE ON contrato_ge
+        FOR EACH ROW WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+            UPDATE contrato_ge SET updated_at = datetime('now','localtime') WHERE id = NEW.id;
+        END
+        """
+    )
     await db.commit()
 
     app["db"] = db

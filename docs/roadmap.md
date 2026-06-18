@@ -170,7 +170,8 @@ Modelar los contratos que "cuelgan" alrededor de los GE. Un contrato es **dato, 
 | PK = UUID (`id TEXT` = `uuid4().hex`, generado en backend) | Entidad creada de forma distribuida: dos máquinas offline no deben colisionar ids de fila al sincronizar. AUTOINCREMENT colisiona (silenciosamente, vía `INSERT OR IGNORE`); el id natural no aplica porque el `numero` es editable y a veces ausente. |
 | `numero` UNIQUE pero NULLABLE | Es el identificador humano (nº de proceso), pero editable (se corrige entre convocatoria y adjudicación) y puede faltar (registro durante procura, antes de adjudicar). Varios NULL no violan UNIQUE en SQLite. |
 | Adjuntos (actas, informes) NO en SQLite | Van en SharePoint; la tabla guardará solo el enlace/ruta (cuando se diseñe). No inflar la base ni romper el sync. |
-| Vínculo GE↔contrato como tabla puente N:M `contrato_ge` (PASO 2+) | Un GE pasa por varios contratos en el tiempo y un contrato cubre muchos GE. NO se modela todavía. |
+| Vínculo GE↔contrato como tabla puente N:M `contrato_ge` ✅ IMPLEMENTADO | Un GE pasa por varios contratos en el tiempo y un contrato cubre muchos GE. PK = `id` TEXT **determinista** del par (`"{contrato_id}_{ge_id}"`), no UUID aleatorio: la colisión entre máquinas se vuelve idempotencia y un desvínculo converge. El motor de sync queda intacto (lee `id` escalar). |
+| Alcance geográfico DERIVADO, no almacenado | Las macrorregiones/agencias que cubre un contrato se calculan vía `contrato_ge → ge → sede → macrorregión`. Por eso se eliminó el campo `ambito` en el rediseño de la cáscara. |
 
 ### Pasos
 
@@ -182,10 +183,29 @@ Modelar los contratos que "cuelgan" alrededor de los GE. Un contrato es **dato, 
 - 12 tests nuevos (UUID, `numero` nullable/unique, CHECKs, apply remoto create/update/delete). Total suite: 53 en verde.
 - **Sin UI. Sin vínculo GE↔contrato.** Ver hardening 4b: el uso intensivo multi-máquina de contratos es lo que materializa el hueco de orden — resolverlo antes de producción intensiva.
 
-#### PASO 2 — CRUD frontend de contratos ⬜ PENDIENTE
+#### PASO 2 — CRUD frontend de contratos ✅ COMPLETADO
 
-Vista lista/detalle + formulario, metiendo el tab "Contratos" como un item más en el sidebar **plano** actual (feo pero funcional). Validar crear/listar/editar + sync cargando Valtom y AT Energy como dos filas reales.
+Vista lista/detalle + formulario, con el tab "Contratos" como un item más en el sidebar **plano** actual. Cableado (ruta + sidebar + estado) en commit `ef74086`; el view + el rediseño de la cáscara, en `edfc471`. Validado cargando Valtom (`28278-2022-BN`) como primera fila real.
 
 #### PASO 3 — Reagrupación de tabs en grupos/subgrupos ⬜ PENDIENTE
 
 Cambio **cosmético** aparte, en su propio commit (no mezclar con funcional). Jerarquía aprobada: Maestros / Contratos / Operación. El grupo **Reportes** NO se crea hasta que exista RamaD (`/export`).
+
+### Modelo general de contratos — entidades incrementales
+
+> Eje **distinto** a los PASOS de despliegue de arriba (backend/frontend/tabs). Aquí se numera la construcción **incremental del modelo de datos** general del Estado peruano (Ley de Contrataciones), aprobado en diseño en papel. Diseño completo, implementación paso a paso.
+
+La cáscara `contratos` original (PASO 1, enum `tipo_objeto` combinado, campo `ambito`) fue **rediseñada** a modelo general en `edfc471`: `+procedimiento_seleccion` (CHECK vocab), `+tipos_objeto` (array JSON multivalor validado en Python), `+entidad_contratante`, `+monto_principal/+monto_accesorio` (INTEGER **céntimos**), `+moneda`; `−tipo_objeto`, `−ambito`. Patrón **denormalización→derivado**: campos caché hoy (`proveedor`, `tipos_objeto`, montos) pasan a derivados cuando lleguen sus entidades hijas, sin invalidar lo cargado hoy.
+
+| # | Entidad | Estado |
+|---|---------|--------|
+| 1 | `contratos` (cáscara general) | ✅ `edfc471` |
+| 2 | `contrato_ge` (puente N:M + alcance derivado) | ✅ este commit |
+| 3 | `proveedores` (registro reutilizable, RUC) | ⬜ pendiente |
+| 4 | `items_contrato` (ítems adjudicados; convierte `proveedor` en derivado) | ⬜ pendiente |
+| 5 | `prestaciones` (principal/accesoria; convierte `tipos_objeto`+montos en derivados) | ⬜ pendiente |
+| 6 | `garantias` (fiel cumplimiento, etc.) | ⬜ pendiente |
+| 7 | `adendas` (adicionales ≤25%, reducciones, ampliaciones) | ⬜ pendiente |
+| 8 | `penalidades` (mora + otras) | ⬜ pendiente |
+| 9 | `servicios`/`mantenimientos` (cronograma de ejecución) | ⬜ pendiente |
+| 10 | `adjuntos` (metadata; archivos fuera de SQLite) | ⬜ pendiente |
