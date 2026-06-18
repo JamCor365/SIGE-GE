@@ -261,6 +261,55 @@ async def init_db(app: web.Application, db_path: Path | None = None) -> None:
         END
         """
     )
+
+    # Ítems del contrato: un contrato puede dividirse en ítems adjudicados a
+    # proveedores distintos (Concurso 002). Adjudicatario único (Valtom) = 1 ítem.
+    #
+    # IDENTIDAD: la identidad de un ítem ES el par (contrato, numero_item), igual
+    # que contrato_ge. Y los ítems SON target de FK (contrato_ge.item_id, y a
+    # futuro servicios/penalidades). Por el principio de unicidad segura, un UUID
+    # reintroduciría el descarte silencioso (UNIQUE) → FKs colgando. Solución:
+    # `id` DETERMINISTA del par ("{contrato_id}_{numero_item}"), escalar, que el
+    # motor lee sin tocarse y converge entre máquinas. numero_item es INMUTABLE
+    # (define el id); corregirlo = delete + recreate. UNIQUE(par) = guard redundante.
+    #
+    # NO hay columna `ambito`: el alcance del ítem se DERIVA de contrato_ge con
+    # item_id = este ítem → sede → macrorregión (mismo principio que en contratos).
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS items_contrato (
+            id            TEXT    PRIMARY KEY,           -- determinista: contrato_id || '_' || numero_item
+            contrato_id   TEXT    NOT NULL REFERENCES contratos(id)   ON UPDATE CASCADE ON DELETE RESTRICT,
+            numero_item   INTEGER NOT NULL,              -- inmutable (define el id); nº de ítem de las bases
+            proveedor_id  TEXT    REFERENCES proveedores(id) ON UPDATE CASCADE ON DELETE RESTRICT,  -- nullable: sin adjudicar / desierto
+            descripcion   TEXT,
+            monto         INTEGER,                       -- céntimos (S/ x 100)
+            moneda        TEXT    NOT NULL DEFAULT 'PEN',
+            estado        TEXT    CHECK (estado IN ('EN_EVALUACION','ADJUDICADO','DESIERTO') OR estado IS NULL),
+            observaciones TEXT,
+            activo        INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
+            created_at    TEXT    NOT NULL,
+            updated_at    TEXT    NOT NULL,
+            UNIQUE (contrato_id, numero_item)
+        )
+        """
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_items_contrato_contrato ON items_contrato(contrato_id)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_items_contrato_proveedor ON items_contrato(proveedor_id)"
+    )
+    await db.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_items_contrato_updated
+        AFTER UPDATE ON items_contrato
+        FOR EACH ROW WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+            UPDATE items_contrato SET updated_at = datetime('now','localtime') WHERE id = NEW.id;
+        END
+        """
+    )
     await db.commit()
 
     app["db"] = db
