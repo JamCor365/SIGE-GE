@@ -28,6 +28,7 @@ _ENTITY_TABLE = {
     "proveedor": "proveedores",
     "item_contrato": "items_contrato",
     "prestacion": "prestaciones",
+    "garantia": "garantias",
 }
 
 

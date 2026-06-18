@@ -367,6 +367,64 @@ async def init_db(app: web.Application, db_path: Path | None = None) -> None:
         END
         """
     )
+
+    # Garantías: cartas fianza / seguros que el contratista entrega al banco
+    # (fiel cumplimiento, adelantos, monto diferencial).
+    #
+    # IDENTIDAD: UUID surrogate (como proveedores). numero_carta_fianza es externo
+    # del emisor pero editable (typos, renovaciones) y puede faltar al registrar,
+    # así que NO sirve de PK. Va INDEXADO pero NO único: un UNIQUE + INSERT OR
+    # IGNORE descartaría en silencio una garantía registrada en otra máquina;
+    # perder una garantía es peor que un duplicado deduplicable por un humano
+    # (soft dedup, igual que proveedores.ruc).
+    #
+    # La distinción fiel cumplimiento principal vs accesoria NO va en `tipo`: se
+    # deriva de prestacion_id → prestaciones.clase. prestacion_id e item_id son
+    # refs BLANDAS (validadas en ruta), nullable (patrón contrato_ge).
+    # estado NO incluye VENCIDA: se deriva de fecha_vencimiento < hoy (read-time,
+    # no almacenado); idx_garantias_vencimiento soporta esa consulta futura.
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS garantias (
+            id                  TEXT    PRIMARY KEY,           -- uuid4().hex
+            contrato_id         TEXT    NOT NULL REFERENCES contratos(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            prestacion_id       TEXT,                          -- nullable; ref BLANDA a prestaciones.id
+            item_id             TEXT,                          -- nullable; ref BLANDA a items_contrato.id
+            tipo                TEXT    CHECK (tipo IN ('FIEL_CUMPLIMIENTO','ADELANTO_DIRECTO','ADELANTO_MATERIALES','MONTO_DIFERENCIAL') OR tipo IS NULL),
+            modalidad           TEXT    CHECK (modalidad IN ('CARTA_FIANZA','SEGURO_CAUCION','DEPOSITO') OR modalidad IS NULL),
+            numero_carta_fianza TEXT,                          -- externo; nullable, editable, NO único
+            monto               INTEGER,                       -- céntimos (S/ x 100)
+            moneda              TEXT    NOT NULL DEFAULT 'PEN',
+            entidad_emisora     TEXT,                          -- banco / aseguradora
+            fecha_emision       TEXT,                          -- ISO (YYYY-MM-DD)
+            fecha_vencimiento   TEXT,                          -- ISO
+            estado              TEXT    CHECK (estado IN ('VIGENTE','EJECUTADA','DEVUELTA') OR estado IS NULL),
+            observaciones       TEXT,
+            activo              INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
+            created_at          TEXT    NOT NULL,
+            updated_at          TEXT    NOT NULL
+        )
+        """
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_garantias_contrato ON garantias(contrato_id)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_garantias_prestacion ON garantias(prestacion_id)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_garantias_vencimiento ON garantias(fecha_vencimiento)"
+    )
+    await db.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_garantias_updated
+        AFTER UPDATE ON garantias
+        FOR EACH ROW WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+            UPDATE garantias SET updated_at = datetime('now','localtime') WHERE id = NEW.id;
+        END
+        """
+    )
     await db.commit()
 
     app["db"] = db
