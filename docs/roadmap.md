@@ -211,3 +211,56 @@ La cáscara `contratos` original (PASO 1, enum `tipo_objeto` combinado, campo `a
 | 10 | `adjuntos` (metadata; archivos fuera de SQLite) | ⬜ pendiente |
 
 > **Principio de unicidad segura (regla del proyecto para entidades futuras).** En este modelo de sync la **única unicidad segura es la PK `id`**. El motor aplica creates remotos con `INSERT OR IGNORE`, así que un `UNIQUE` sobre una clave natural (RUC, código…) puede descartar en silencio una de dos filas creadas offline con `id` distintos; si esa fila es **target de una FK** (p.ej. `items_contrato.proveedor_id → proveedores.id`), deja FKs colgando → corrupción. Por eso toda clave natural única adicional debe ser **blanda** (dedup/aviso en la app), **salvo que nada le haga FK** (caso `contratos.numero`, que sí es `UNIQUE`). `proveedores.ruc` va indexado pero NO único. (También en AGENTS.md.)
+
+---
+
+## RamaG — Mapa geoespacial de sedes
+
+### Objetivo
+
+Dar ubicación (lat/long) a las sedes para trazar rutas y armar cronogramas de
+viaje/mantenimiento sobre un mapa. Stack **100% gratuito, sin Google**: Leaflet +
+tiles OpenStreetMap (mapa), Nominatim/OSM (geocoding), OpenRouteService (rutas).
+
+### Decisiones de diseño tomadas
+
+- **Coordenadas como columnas de `sedes`** (`latitud`, `longitud` REAL WGS84,
+  nullable) + `geo_fuente` (`'distrito_centroide'|'nominatim'|'manual'`). Editables
+  **vía API** → emiten eventos → sincronizan como cualquier campo (el motor filtra
+  columnas con `PRAGMA table_info`, no se toca `events.py`/`sync_engine.py`).
+- **Autoría final:** `geo_fuente='manual'` (coordenada corregida a mano) **manda** y
+  nunca se re-geocodifica. Mismo principio que la reconciliación Excel-vs-BD.
+- **Fuente = geocoding independiente** (Nominatim), no las coordenadas del Excel
+  maestro. Las del Excel son ruidosas (ABANCAY a ~97 km del real) → se reservan solo
+  para **auditoría**. Auditor fuerte = coincidencia de departamento (no la distancia).
+
+### Pasos
+
+#### PASO 1 — Modelo + migración ✅ COMPLETADO
+
+`sedes` +`latitud`/`longitud`/`geo_fuente`; vista `v_sedes_completo` los expone.
+`_migrate_sedes` idempotente (ALTER TABLE ADD COLUMN + recrea la vista). Validación en
+`routes/sedes.py`: vocabulario de `geo_fuente`, caja de Perú (guard anti lat/long
+invertida), lat+long juntas. 5 tests nuevos (137 verdes).
+
+#### PASO 2 — Geocoding + carga ✅ COMPLETADO
+
+470/494 sedes geocodificadas nivel localidad (`"{nombre_agencia}, {departamento}, Perú"`,
+depto del Excel por margesi) y cargadas vía API como `geo_fuente='nominatim'`. 24 sin
+resultado (nombres de institución/mall/oficina) → colocación manual en PASO 4.
+Auditoría por departamento: 405 coinciden; los 11 "no coinciden" resultaron
+geocode-correcto/Excel-mal. Riesgo residual: homónimos dentro del mismo depto
+(p.ej. "28 DE JULIO") → los corrige el mapa.
+
+#### PASO 3 — Refinamiento Nominatim ✅ (plegado en PASO 2)
+
+#### PASO 4 — Mapa Leaflet + autoría final ⬜ SIGUIENTE
+
+Vista de mapa: marcador por sede (color por macro/estado), popup con datos. Modo
+edición: arrastrar marcador → `PUT` con `geo_fuente='manual'` (blindado). Filtro/realce
+de las 24 sin coordenada y de sospechosas para revisión.
+
+#### PASO 5 — Rutas y cronogramas (OpenRouteService) ⬜ PENDIENTE
+
+Matriz de tiempos/distancias entre sedes seleccionadas para planear la ruta de visita.
+Alternativa offline futura: auto-hospedar OSRM con extracto OSM de Perú.

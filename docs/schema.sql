@@ -40,6 +40,9 @@ CREATE TABLE sedes (
     departamento    TEXT,
     provincia       TEXT,
     distrito        TEXT,
+    latitud         REAL,                      -- WGS84; nullable hasta geocodificar
+    longitud        REAL,                      -- WGS84; nullable hasta geocodificar
+    geo_fuente      TEXT    CHECK (geo_fuente IN ('distrito_centroide','nominatim','manual') OR geo_fuente IS NULL),
     macroregion_id  INTEGER NOT NULL,
     observaciones   TEXT,
     activo          INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
@@ -151,6 +154,7 @@ END;
 CREATE VIEW v_sedes_completo AS
 SELECT s.id, s.codigo, s.nombre_agencia, s.categoria,
        s.direccion, s.departamento, s.provincia, s.distrito,
+       s.latitud, s.longitud, s.geo_fuente,
        m.id   AS macroregion_id,
        m.nombre AS macroregion_nombre,
        s.activo, s.created_at, s.updated_at

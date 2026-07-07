@@ -64,6 +64,51 @@ async def _migrate_contratos(db: aiosqlite.Connection) -> None:
         await db.execute("ALTER TABLE contratos DROP COLUMN ambito")
 
 
+# Geolocalización de sedes (PASO 1 del mapa). CREATE TABLE del schema no altera
+# tablas existentes → las cache.db previas se migran aquí con ALTER TABLE ADD
+# COLUMN (idempotente). geo_fuente registra la procedencia de la coordenada para
+# la autoría final: 'manual' (corregida a mano) manda y nunca se re-geocodifica.
+_SEDES_NEW_COLUMNS = {
+    "latitud": "REAL",
+    "longitud": "REAL",
+    "geo_fuente": (
+        "TEXT CHECK (geo_fuente IN "
+        "('distrito_centroide','nominatim','manual') OR geo_fuente IS NULL)"
+    ),
+}
+
+# Vista canónica de sedes. Se mantiene idéntica a la de docs/schema.sql; se
+# recrea en la migración para exponer las columnas geo en DBs heredadas.
+_V_SEDES_COMPLETO = """
+CREATE VIEW v_sedes_completo AS
+SELECT s.id, s.codigo, s.nombre_agencia, s.categoria,
+       s.direccion, s.departamento, s.provincia, s.distrito,
+       s.latitud, s.longitud, s.geo_fuente,
+       m.id   AS macroregion_id,
+       m.nombre AS macroregion_nombre,
+       s.activo, s.created_at, s.updated_at
+FROM sedes s
+JOIN macroregiones m ON m.id = s.macroregion_id
+"""
+
+
+async def _migrate_sedes(db: aiosqlite.Connection) -> None:
+    """Añade lat/long/geo_fuente a una tabla `sedes` heredada y actualiza su vista.
+
+    En una DB nueva (schema.sql ya trae las columnas y la vista finales) todo es
+    no-op salvo el DROP/CREATE de la vista, que la deja idéntica.
+    """
+    async with db.execute("PRAGMA table_info(sedes)") as cur:
+        cols = {row[1] for row in await cur.fetchall()}
+    for name, decl in _SEDES_NEW_COLUMNS.items():
+        if name not in cols:
+            await db.execute(f"ALTER TABLE sedes ADD COLUMN {name} {decl}")
+    # La vista se recrea siempre para reflejar las columnas geo (una vista vieja
+    # sin lat/long dejaría al frontend sin coordenadas).
+    await db.execute("DROP VIEW IF EXISTS v_sedes_completo")
+    await db.execute(_V_SEDES_COMPLETO)
+
+
 async def init_db(app: web.Application, db_path: Path | None = None) -> None:
     if db_path is None:
         db_path = DB_PATH
@@ -111,6 +156,9 @@ async def init_db(app: web.Application, db_path: Path | None = None) -> None:
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_events_log_created_at ON events_log(created_at)"
     )
+
+    # Geolocalización de sedes (columnas + vista); idempotente.
+    await _migrate_sedes(db)
 
     # Contratos: entidad creada de forma distribuida → PK es un UUID opaco
     # (generado en el backend al crear), no un id natural ni autoincrement.

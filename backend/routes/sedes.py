@@ -19,6 +19,9 @@ INSERTABLE_FIELDS = {
     "departamento",
     "provincia",
     "distrito",
+    "latitud",
+    "longitud",
+    "geo_fuente",
     "macroregion_id",
     "observaciones",
     "activo",
@@ -26,6 +29,35 @@ INSERTABLE_FIELDS = {
     "updated_at",
 }
 UPDATABLE_FIELDS = INSERTABLE_FIELDS - {"id", "created_at", "updated_at"}
+
+_GEO_FUENTES = {"distrito_centroide", "nominatim", "manual"}
+# Caja envolvente de Perú (WGS84) con margen. Sirve de guard contra lat/long
+# invertidas o basura: una coordenada fuera de esta caja no es una sede peruana.
+_LAT_MIN, _LAT_MAX = -18.5, 0.5
+_LON_MIN, _LON_MAX = -81.5, -68.5
+
+
+def _validate_geo(payload: dict) -> str | None:
+    """Valida los campos geográficos si están presentes. Devuelve un mensaje de
+    error o None. Acepta None (para limpiar la coordenada)."""
+    fuente = payload.get("geo_fuente")
+    if fuente is not None and fuente not in _GEO_FUENTES:
+        return f"geo_fuente inválida: {fuente} (use {', '.join(sorted(_GEO_FUENTES))})"
+
+    for campo, lo, hi in (("latitud", _LAT_MIN, _LAT_MAX), ("longitud", _LON_MIN, _LON_MAX)):
+        val = payload.get(campo)
+        if val is None:
+            continue
+        if not isinstance(val, (int, float)) or isinstance(val, bool):
+            return f"{campo} debe ser numérico"
+        if not (lo <= val <= hi):
+            return f"{campo} fuera del rango de Perú [{lo}, {hi}]: {val}"
+
+    # Coordenada a medias: si el payload trae ambas, no vale una nula y otra no.
+    if "latitud" in payload and "longitud" in payload:
+        if (payload["latitud"] is None) != (payload["longitud"] is None):
+            return "latitud y longitud deben ir juntas"
+    return None
 
 
 async def list_sedes(request: web.Request) -> web.Response:
@@ -61,6 +93,9 @@ async def create_sede(request: web.Request) -> web.Response:
     missing = required - set(payload)
     if missing:
         return error_response(f"campos requeridos: {', '.join(sorted(missing))}", 400)
+    geo_error = _validate_geo(payload)
+    if geo_error:
+        return error_response(geo_error, 400)
 
     sql, values = build_insert_sql(TABLE, payload)
     try:
@@ -100,6 +135,9 @@ async def update_sede(request: web.Request) -> web.Response:
     unknown = set(payload) - UPDATABLE_FIELDS
     if unknown:
         return error_response(f"campos no permitidos: {', '.join(sorted(unknown))}", 400)
+    geo_error = _validate_geo(payload)
+    if geo_error:
+        return error_response(geo_error, 400)
     if await get_by_id(db, VIEW, item_id) is None:
         return error_response("sede no encontrada", 404)
 
