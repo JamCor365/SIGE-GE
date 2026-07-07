@@ -254,11 +254,14 @@ geocode-correcto/Excel-mal. Riesgo residual: homónimos dentro del mismo depto
 
 #### PASO 3 — Refinamiento Nominatim ✅ (plegado en PASO 2)
 
-#### PASO 4 — Mapa Leaflet + autoría final ⬜ SIGUIENTE
+#### PASO 4 — Mapa Leaflet + autoría final ✅ COMPLETADO
 
-Vista de mapa: marcador por sede (color por macro/estado), popup con datos. Modo
-edición: arrastrar marcador → `PUT` con `geo_fuente='manual'` (blindado). Filtro/realce
-de las 24 sin coordenada y de sospechosas para revisión.
+Vista `/mapa` (Leaflet vendorizado en `frontend/vendor/leaflet/`, tiles OSM online,
+marcadores `divIcon` CSS sin PNG). Marcador por sede coloreado por macrorregión;
+leyenda + panel de "Sin ubicar". **Modo edición** (toggle): arrastrar marcador →
+`PUT geo_fuente='manual'` (blindado); seleccionar una sede sin coord + clic en el
+mapa la ubica. Verificado con Playwright (470 marcadores, 20 tiles, 0 errores de
+consola; toggle habilita drag y colocación).
 
 #### PASO 5 — Rutas y cronogramas (OpenRouteService) ⬜ PENDIENTE
 

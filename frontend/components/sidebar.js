@@ -8,6 +8,7 @@ const ITEMS = [
     { path: "/macroregiones", label: "Macroregiones", icon: macroIcon() },
     { path: "/tta", label: "TTA", icon: ttaIcon() },
     { path: "/contratos", label: "Contratos", icon: contratoIcon() },
+    { path: "/mapa", label: "Mapa", icon: mapaIcon() },
     { path: "/sync", label: "Sincronización", icon: syncIcon(), badge: true },
 ];
 
@@ -28,6 +29,9 @@ function ttaIcon() {
 }
 function contratoIcon() {
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M8 13h8M8 17h8M8 9h2"></path></svg>`;
+}
+function mapaIcon() {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>`;
 }
 function syncIcon() {
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"></path></svg>`;

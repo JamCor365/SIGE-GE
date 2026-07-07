@@ -6,6 +6,7 @@ import { renderSedesList, renderSedeDetail } from "./views/sedes.js";
 import { renderMacroregionesList, renderMacroregionDetail } from "./views/macroregiones.js";
 import { renderTTAList, renderTTADetail } from "./views/tta.js";
 import { renderContratosList, renderContratoDetail } from "./views/contratos.js";
+import { renderMapa } from "./views/mapa.js";
 import { renderSync } from "./views/sync.js";
 import { showToast } from "./toast.js";
 
@@ -45,6 +46,7 @@ registerRoute("/tta", () => { renderTTAList(); updateActiveSidebar(); });
 registerRoute("/tta/:id", (params) => { renderTTADetail(params); updateActiveSidebar(); });
 registerRoute("/contratos", () => { renderContratosList(); updateActiveSidebar(); });
 registerRoute("/contratos/:id", (params) => { renderContratoDetail(params); updateActiveSidebar(); });
+registerRoute("/mapa", () => { renderMapa(); updateActiveSidebar(); });
 registerRoute("/sync", () => { renderSync(); updateActiveSidebar(); });
 
 renderSidebar();
