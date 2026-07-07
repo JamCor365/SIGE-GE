@@ -54,8 +54,13 @@ if (-not (Test-Path $dbPath)) {
 # ─── 6. Instalar / verificar dependencias ────────────────────────────────────
 $wheelsDir = Join-Path $PSScriptRoot "dist\wheels"
 if (Test-Path $wheelsDir) {
+    # El bundle (empaquetar_windows.sh) trae solo deps de producción.
+    #   --no-dev : no instalar el grupo dev (httpx/pytest), ausente del bundle.
+    #   --frozen : usar uv.lock tal cual, sin re-resolver contra el índice; sin
+    #              esto uv valida el lock completo (incluye dev) contra dist\wheels
+    #              y falla al no hallar httpx aunque no vaya a instalarlo.
     Write-Host "Dependencias: modo offline (dist\wheels)..." -ForegroundColor Cyan
-    & $uv sync --find-links $wheelsDir --no-index
+    & $uv sync --no-dev --frozen --find-links $wheelsDir --no-index
 } else {
     Write-Host "Dependencias: descargando (requiere internet la primera vez)..." -ForegroundColor Cyan
     & $uv sync
