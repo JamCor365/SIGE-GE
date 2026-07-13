@@ -28,6 +28,7 @@ dist/
 
 # ─── Capturas de auditoría de frontend (locales, regenerables) ────────────────
 frontend_audit_shots/
+.playwright-mcp/
 
 # ─── IDE ──────────────────────────────────────────────────────────────────────
 .idea/

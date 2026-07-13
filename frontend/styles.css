@@ -512,6 +512,53 @@ tr.clickable {
     max-width: 60%;
 }
 
+/* ── Paneles de sub-entidades del contrato ── */
+.subentity-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.subentity-panel__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 0.5rem;
+}
+
+.subentity-panel__head h3 {
+    margin: 0;
+    border: none;
+    padding: 0;
+}
+
+.btn--sm {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+/* La tabla ya vive dentro de la tarjeta del panel: plana + scroll horizontal
+   como fallback para que la columna de acciones (Editar/Baja) nunca se corte. */
+.subentity-panel .table-wrapper {
+    overflow-x: auto;
+    box-shadow: none;
+    border-radius: 0;
+}
+
+/* Compacta: 6 columnas + acciones caben sin scroll en el ancho del panel. */
+.subentity-panel table {
+    font-size: 0.82rem;
+}
+
+.subentity-panel th,
+.subentity-panel td {
+    padding: 0.5rem 0.5rem;
+}
+
 /* ── Modal ── */
 .modal-overlay {
     position: fixed;

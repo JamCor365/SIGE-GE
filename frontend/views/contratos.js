@@ -6,6 +6,7 @@ import { renderPagination } from "../components/pagination.js";
 import { openModal, createModalHeader, createModalFooter } from "../components/modal.js";
 import { showToast } from "../toast.js";
 import { buildFormFields, buildPayload } from "./_form_helpers.js";
+import { renderSubentityPanel } from "./_subentities.js";
 
 // Dominios cerrados — deben coincidir con los CHECK del backend (db.py / contratos.py).
 const ESTADOS = ["VIGENTE", "CULMINADO", "RESUELTO"];
@@ -24,6 +25,105 @@ function formatMonto(centimos, moneda = "PEN") {
     return `${moneda === "PEN" ? "S/" : moneda} ${soles}`;
 }
 const tiposLabel = r => (Array.isArray(r.tipos_objeto) && r.tipos_objeto.length ? r.tipos_objeto.join(" + ") : "—");
+const opts = arr => arr.map(v => ({ value: v, label: v }));
+
+// Sub-entidades del contrato mostradas en el detalle (paneles CRUD reutilizables).
+const SUBENTITY_CONFIGS = [
+    {
+        title: "Adendas", singular: "Adenda",
+        path: cid => `/contratos/${cid}/adendas`,
+        itemPath: (cid, id) => `/contratos/${cid}/adendas/${id}`,
+        columns: [
+            { header: "N°", accessor: r => r.numero ?? "—" },
+            { header: "Tipo", accessor: r => r.tipo || "—" },
+            { header: "Fecha", accessor: r => r.fecha || "—" },
+            { header: "Δ Principal", accessor: r => formatMonto(r.monto_delta_principal) },
+            { header: "Δ Accesorio", accessor: r => formatMonto(r.monto_delta_accesorio) },
+        ],
+        fields: [
+            { name: "numero", label: "Número", type: "number", required: true },
+            { name: "tipo", label: "Tipo", type: "select", options: opts(["AMPLIACION_PLAZO", "ADICIONAL", "REDUCCION", "MODIFICACION_CONVENCIONAL"]) },
+            { name: "fecha", label: "Fecha", type: "date" },
+            { name: "base_legal", label: "Base legal", type: "text" },
+            { name: "objeto", label: "Objeto", type: "text", fullWidth: true },
+            { name: "monto_delta_principal", label: "Δ Principal (S/)", type: "number", step: "0.01" },
+            { name: "monto_delta_accesorio", label: "Δ Accesorio (S/)", type: "number", step: "0.01" },
+            { name: "plazo_delta_dias", label: "Δ Plazo (días)", type: "number" },
+            { name: "observaciones", label: "Observaciones", type: "textarea", fullWidth: true },
+        ],
+        montoFields: ["monto_delta_principal", "monto_delta_accesorio"],
+    },
+    {
+        title: "Penalidades", singular: "Penalidad",
+        path: cid => `/contratos/${cid}/penalidades`,
+        itemPath: (cid, id) => `/contratos/${cid}/penalidades/${id}`,
+        columns: [
+            { header: "Tipo", accessor: r => r.tipo || "—" },
+            { header: "Monto", accessor: r => formatMonto(r.monto) },
+            { header: "Días mora", accessor: r => r.dias_mora ?? "—" },
+            { header: "Estado", accessor: r => r.estado || "—" },
+            { header: "Fecha", accessor: r => r.fecha || "—" },
+        ],
+        fields: [
+            { name: "tipo", label: "Tipo", type: "select", options: opts(["MORA", "OTRAS"]) },
+            { name: "concepto", label: "Concepto", type: "text", fullWidth: true },
+            { name: "monto", label: "Monto (S/)", type: "number", step: "0.01" },
+            { name: "dias_mora", label: "Días de mora", type: "number" },
+            { name: "base_legal", label: "Base legal", type: "text" },
+            { name: "fecha", label: "Fecha", type: "date" },
+            { name: "estado", label: "Estado", type: "select", options: opts(["EN_EVALUACION", "APLICADA", "EXONERADA"]) },
+            { name: "observaciones", label: "Observaciones", type: "textarea", fullWidth: true },
+        ],
+        montoFields: ["monto"],
+    },
+    {
+        title: "Servicios de mantenimiento", singular: "Servicio",
+        path: cid => `/contratos/${cid}/servicios`,
+        itemPath: (cid, id) => `/contratos/${cid}/servicios/${id}`,
+        columns: [
+            { header: "GE", accessor: r => r.ge_id ?? "—" },
+            { header: "N° Serv.", accessor: r => r.nro_servicio ?? "—" },
+            { header: "Programada", accessor: r => r.fecha_programada || "—" },
+            { header: "Ejecutada", accessor: r => r.fecha_ejecutada || "—" },
+            { header: "Estado", accessor: r => r.estado || "—" },
+        ],
+        fields: [
+            { name: "ge_id", label: "Grupo electrógeno", type: "select", required: true },
+            { name: "nro_servicio", label: "N° de servicio", type: "number", required: true },
+            { name: "fecha_programada", label: "Fecha programada", type: "date" },
+            { name: "fecha_ejecutada", label: "Fecha ejecutada", type: "date" },
+            { name: "estado", label: "Estado", type: "select", options: opts(["PROGRAMADO", "EJECUTADO", "CONFORME", "OBSERVADO"]) },
+            { name: "observaciones", label: "Observaciones", type: "textarea", fullWidth: true },
+        ],
+        intFields: ["ge_id"],
+        loadOptions: async () => {
+            const res = await api.get("/grupos");
+            return { ge_id: (res.data || []).filter(g => g.activo === 1).map(g => ({ value: g.id, label: `GE ${g.id}${g.sede_id ? ` — sede ${g.sede_id}` : ""}` })) };
+        },
+    },
+    {
+        title: "Adjuntos", singular: "Adjunto",
+        path: cid => `/contratos/${cid}/adjuntos`,
+        itemPath: (cid, id) => `/contratos/${cid}/adjuntos/${id}`,
+        columns: [
+            { header: "Tipo", accessor: r => r.tipo || "—" },
+            { header: "Nombre", accessor: r => r.nombre || "—" },
+            { header: "Págs", accessor: r => r.paginas ?? "—" },
+            { header: "Fecha", accessor: r => r.fecha || "—" },
+        ],
+        fields: [
+            { name: "tipo", label: "Tipo", type: "select", options: opts(["CONTRATO", "BASES", "ADENDA", "ACTA_CONFORMIDAD", "INFORME_TECNICO", "GUIA_REMISION", "PANEL_FOTOGRAFICO", "CONSTANCIA_OPERATIVIDAD", "CARTA_FIANZA", "OTRO"]) },
+            { name: "nombre", label: "Nombre", type: "text", fullWidth: true },
+            { name: "ruta", label: "Ruta / enlace en SharePoint", type: "text", fullWidth: true },
+            { name: "sha256", label: "SHA-256", type: "text" },
+            { name: "paginas", label: "Páginas", type: "number" },
+            { name: "fecha", label: "Fecha", type: "date" },
+            { name: "ref_entidad", label: "Entidad relacionada (token)", type: "text" },
+            { name: "ref_id", label: "ID relacionado", type: "text" },
+            { name: "observaciones", label: "Observaciones", type: "textarea", fullWidth: true },
+        ],
+    },
+];
 
 const COLUMNS = [
     { header: "Número", accessor: r => r.numero || "—" },
@@ -207,6 +307,12 @@ export async function renderContratoDetail(params) {
         ]));
         grid.appendChild(col);
         main.appendChild(grid);
+
+        // Paneles CRUD de sub-entidades del contrato (adendas, penalidades, servicios, adjuntos).
+        const panels = document.createElement("div");
+        panels.className = "subentity-panels";
+        SUBENTITY_CONFIGS.forEach(cfg => panels.appendChild(renderSubentityPanel(item.id, cfg)));
+        main.appendChild(panels);
     } catch (err) {
         console.error(err);
         showToast("Error al cargar detalle: " + (err.message || ""), "error");
