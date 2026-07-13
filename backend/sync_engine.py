@@ -38,7 +38,20 @@ async def _table_columns(db: aiosqlite.Connection, table: str) -> set[str]:
     return {row[1] for row in rows}
 
 
-async def _apply_one(db: aiosqlite.Connection, event: dict) -> None:
+async def _apply_one(db: aiosqlite.Connection, event: dict) -> int | None:
+    """Aplica un evento a su tabla destino.
+
+    Devuelve las filas afectadas SOLO para update/delete con efecto real (int).
+    Un 0 significa que la fila objetivo no existe todavía —su create aún no
+    llegó (subida parcial en otra máquina)— y el caller DIFIERE el evento (no lo
+    registra en events_log) para re-aplicarlo en un sync posterior.
+
+    Devuelve None cuando el resultado NO debe evaluarse para deferral:
+    - create (es el ancla: siempre se registra), y
+    - update sin columnas válidas tras filtrar (no-op: nada que aplicar).
+    Así None nunca se confunde con "0 filas" y esos casos no entran al bucle de
+    deferral.
+    """
     entity = event["entity"]
     action = event["action"]
     entity_id = event["entity_id"]
@@ -62,20 +75,23 @@ async def _apply_one(db: aiosqlite.Connection, event: dict) -> None:
             f"INSERT OR IGNORE INTO {table} ({', '.join(cols)}) VALUES ({', '.join(placeholders)})",
             list(payload.values()),
         )
+        return None
 
     elif action == "update":
         if not payload:
-            return
+            return None
         assignments = ", ".join(f"{k} = ?" for k in payload)
-        await db.execute(
+        cur = await db.execute(
             f"UPDATE {table} SET {assignments} WHERE id = ?",
             [*payload.values(), entity_id],
         )
+        return cur.rowcount
 
     elif action == "delete":
-        await db.execute(
+        cur = await db.execute(
             f"UPDATE {table} SET activo = 0 WHERE id = ?", (entity_id,)
         )
+        return cur.rowcount
 
     else:
         raise ValueError(f"Acción desconocida: {action!r}")
@@ -139,10 +155,16 @@ async def retry_pending_uploads(db: aiosqlite.Connection, storage) -> dict:
 async def apply_remote_events(db: aiosqlite.Connection, storage) -> dict:
     """
     Descarga todos los eventos de events_pending/ y aplica los desconocidos localmente.
-    Devuelve {"applied": N, "skipped": N, "errors": [...]}.
+    Devuelve {"applied": N, "skipped": N, "deferred": N, "errors": [...]}.
+
+    Hardening de orden (RamaE 4b): si un update/delete afecta 0 filas es porque su
+    create aún no llegó (quedó synced=0 en otra máquina). Ese evento se DIFIERE: no
+    se registra en events_log, así permanece en events_pending/ y el próximo sync lo
+    re-descubre y re-aplica una vez presente el create. Sin esto el evento quedaría
+    "consumido" y el cambio se perdería en silencio.
     """
     event_ids = await storage.list_pending()
-    applied, skipped = 0, 0
+    applied, skipped, deferred = 0, 0, 0
     errors: list[dict] = []
 
     for event_id in event_ids:
@@ -159,7 +181,17 @@ async def apply_remote_events(db: aiosqlite.Connection, storage) -> dict:
                 errors.append({"event_id": event_id, "error": "no encontrado en storage"})
                 continue
 
-            await _apply_one(db, event)
+            rows = await _apply_one(db, event)
+            if rows == 0:
+                # update/delete cuya fila no existe todavía → diferir (no registrar).
+                await db.rollback()
+                deferred += 1
+                log.info(
+                    "Evento diferido (fila ausente, create pendiente): %s (%s %s)",
+                    event_id, event["action"], event["entity"],
+                )
+                continue
+
             await log_event(db, event, synced=1)
             await db.commit()
             applied += 1
@@ -169,4 +201,4 @@ async def apply_remote_events(db: aiosqlite.Connection, storage) -> dict:
             log.warning("Error al aplicar evento %s: %s", event_id, exc)
             errors.append({"event_id": event_id, "error": str(exc)})
 
-    return {"applied": applied, "skipped": skipped, "errors": errors}
+    return {"applied": applied, "skipped": skipped, "deferred": deferred, "errors": errors}

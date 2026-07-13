@@ -132,19 +132,21 @@ Dos ítems de la misma familia: persistir lo que falla y no perder updates que l
 
 **Archivos afectados:** `backend/sync_engine.py`, `backend/storage/base.py` (nuevo método `upload_error`), ambos backends.
 
-##### 4b — Hardening de orden: update/delete que llega antes que su create 🔴 PRIORIDAD ALTA
+##### 4b — Hardening de orden: update/delete que llega antes que su create ✅ COMPLETADO
 
-**Qué es (agujero real, confirmado en el código):** cuando `_apply_one` aplica un `update` o `delete` cuyo `WHERE id = X` no encuentra fila (porque el `create` aún no llegó), afecta **0 filas sin error**, y `apply_remote_events` lo registra igual en `events_log` con `synced=1` (aplica y loguea sin mirar filas afectadas, `sync_engine.py:156-157`). El evento queda "consumido". Cuando el `create` llega después, se inserta con `INSERT OR IGNORE` la versión **vieja** de la entidad y el `update` ya no se re-aplica → **el cambio se pierde en silencio**.
+**Estado:** ✅ IMPLEMENTADO Y VERIFICADO (142 tests verdes; 5 nuevos en `tests/test_sync_ordering.py`). Pendiente de verificación en banco con segunda máquina (escenario P2P real de subida parcial). Enfoque elegido: **Opción 1 — deferral por re-descubrimiento** (sin migración).
+
+**Fix implementado:** `_apply_one` ahora devuelve filas afectadas (`int | None`): `int` para update/delete, `None` para create (ancla) y para update sin columnas válidas (no-op, evita bucle de deferral). Si un update/delete afecta **0 filas**, `apply_remote_events` y `apply_post_snapshot_events` lo **DIFIEREN**: `rollback` + NO registrar en `events_log`, de modo que el evento permanece en `events_pending/` y el próximo sync lo re-descubre y re-aplica una vez presente el `create` (que por orden lexicográfico se procesa antes en el mismo ciclo). `apply_remote_events` devuelve un contador `deferred`; el frontend lo muestra ("N en espera de su creación").
+
+**Residual conocido (acotar en 4a):** un huérfano *genuino permanente* —`create` de una máquina que murió sin subirlo nunca— se re-descarga y re-intenta (0 filas) en cada sync indefinidamente. Es barato (un UPDATE de 0 filas) y consistente con el modelo eventually-consistent que tolera máquinas muertas; el tope explícito (mandar a `events_error/` tras N intentos) es trabajo de 4a.
+
+**Qué era (agujero real, confirmado en el código):** cuando `_apply_one` aplicaba un `update` o `delete` cuyo `WHERE id = X` no encontraba fila (porque el `create` aún no llegó), afectaba **0 filas sin error**, y `apply_remote_events` lo registraba igual en `events_log` con `synced=1`. El evento quedaba "consumido". Cuando el `create` llegaba después, se insertaba con `INSERT OR IGNORE` la versión **vieja** de la entidad y el `update` ya no se re-aplicaba → **el cambio se perdía en silencio**.
 
 El orden lexicográfico de `event_id` (≡ cronológico) cubre el caso normal en que ambos eventos están presentes al sincronizar. El hueco se abre solo en **subida parcial**: el `create` falla al subir (queda `synced=0`, no está en SharePoint) mientras un `update` posterior sube OK, y otra máquina sincroniza en esa ventana.
 
-**Por qué importa AHORA y no "algún día":** `contrato` es la PRIMERA entidad que se **crea y edita activamente de forma distribuida** desde la UI. Los maestros (`grupo_electrogeno`, `sede`, etc.) se cargaron en bloque desde el Excel y casi no se tocan desde la UI — por eso nunca expusieron este hueco, aunque el motor lo tiene desde siempre. El riesgo se materializa con el uso intensivo multi-máquina de contratos.
+**Por qué importaba AHORA y no "algún día":** `contrato` es la PRIMERA entidad que se **crea y edita activamente de forma distribuida** desde la UI. Los maestros (`grupo_electrogeno`, `sede`, etc.) se cargaron en bloque desde el Excel y casi no se tocan desde la UI — por eso nunca expusieron este hueco, aunque el motor lo tiene desde siempre. El riesgo se materializa con el uso intensivo multi-máquina de contratos.
 
-**Prioridad: ALTA.** Debe resolverse ANTES de que el flujo multi-máquina de contratos sea de uso intensivo en producción, no después.
-
-**Esbozo del fix (NO implementar aún — requiere diseño):** si un `update`/`delete` afecta 0 filas, NO marcarlo `synced=1` → queda pendiente y se re-aplica cuando llegue el `create`. **Matiz a resolver en el diseño:** un `update`/`delete` genuinamente huérfano (fila que nunca existirá) se reintentaría en cada sync indefinidamente → necesita tope (reintentos limitados / expiración / mandar a `events_error/` tras N intentos). No es one-liner; conecta con 4a.
-
-**Archivos afectados (previstos):** `backend/sync_engine.py` (`_apply_one` debe reportar filas afectadas; `apply_remote_events` decide logueo), posiblemente `events_log` (contador de intentos), `backend/snapshot.py` (`apply_post_snapshot_events` comparte `_apply_one`).
+**Archivos afectados (implementado):** `backend/sync_engine.py` (`_apply_one` reporta filas afectadas; `apply_remote_events` difiere en 0 filas y devuelve `deferred`), `backend/snapshot.py` (`apply_post_snapshot_events` comparte `_apply_one`), `frontend/views/sync.js` (muestra `deferred`), `tests/test_sync_ordering.py` (5 tests nuevos).
 
 ---
 

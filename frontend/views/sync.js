@@ -79,12 +79,13 @@ async function _doSync(btn) {
     btn.textContent = "Sincronizando…";
     try {
         const res = await api.post("/sync/apply");
-        const { uploaded = 0, upload_failed = 0, applied = 0, errors = [] } = res;
+        const { uploaded = 0, upload_failed = 0, applied = 0, deferred = 0, errors = [] } = res;
 
         const parts = [];
         if (uploaded > 0)      parts.push(`${uploaded} cambio(s) subido(s)`);
         if (upload_failed > 0) parts.push(`${upload_failed} error(es) al subir`);
         if (applied > 0)       parts.push(`${applied} cambio(s) de otras máquinas aplicado(s)`);
+        if (deferred > 0)      parts.push(`${deferred} en espera de su creación`);
 
         const hasErrors = upload_failed > 0 || errors.length > 0;
         const msg = parts.length

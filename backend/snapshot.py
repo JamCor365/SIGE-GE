@@ -304,7 +304,12 @@ async def apply_post_snapshot_events(
                 event = await storage.download_event(event_id)
             if event is None:
                 continue
-            await _apply_one(db, event)
+            rows = await _apply_one(db, event)
+            if rows == 0:
+                # update/delete sin fila: su create aún no llegó. No registrar →
+                # el próximo sync normal lo re-descubre de events_pending/ (4b).
+                await db.rollback()
+                continue
             await log_event(db, event, synced=1)
             await db.commit()
             applied += 1
