@@ -208,7 +208,7 @@ La cáscara `contratos` original (PASO 1, enum `tipo_objeto` combinado, campo `a
 | 5 | `prestaciones` (principal/accesoria; UUID PK —numero sintético no converge—, `item_id` opcional, `tipos_objeto` multivalor; convierte `tipos_objeto`+montos del contrato en derivados read-time) | ✅ este commit |
 | 6 | `garantias` (fiel cumplimiento, adelantos; UUID PK, `numero_carta_fianza` no único, `prestacion_id`/`item_id` soft; estado sin VENCIDA —derivable—; alertas de vencimiento read-time diseñadas) | ✅ este commit |
 | 7 | `adendas` (UUID PK; tipo AMPLIACION_PLAZO/ADICIONAL/REDUCCION/MODIFICACION_CONVENCIONAL; monto_delta principal/accesorio con signo + plazo_delta_dias; dedup blando por (contrato_id,numero)) | ✅ este commit |
-| 8 | `penalidades` (mora + otras) | ⬜ pendiente |
+| 8 | `penalidades` (UUID PK; tipo MORA/OTRAS; monto céntimos + dias_mora; refs blandas prestacion_id/item_id; estado EN_EVALUACION/APLICADA/EXONERADA) | ✅ este commit |
 | 9 | `servicios`/`mantenimientos` (cronograma de ejecución) | ⬜ pendiente |
 | 10 | `adjuntos` (metadata; archivos fuera de SQLite) | ⬜ pendiente |
 

@@ -30,6 +30,7 @@ _ENTITY_TABLE = {
     "prestacion": "prestaciones",
     "garantia": "garantias",
     "adenda": "adendas",
+    "penalidad": "penalidades",
 }
 
 

@@ -524,6 +524,57 @@ async def init_db(app: web.Application, db_path: Path | None = None) -> None:
         END
         """
     )
+
+    # Penalidades: descuentos al contratista por incumplimiento (Ley de
+    # Contrataciones). PK = UUID surrogate (como garantias): entidad creada de
+    # forma distribuida, sin clave natural que converja (una misma causa puede
+    # penalizarse varias veces). Nada le hace FK.
+    #
+    # tipo MORA vs OTRAS: en sg-valtom (acta_conformidad) las penalidades se
+    # rastrean justamente con ese split (penalidad_mora / otras_penalidades).
+    #   - MORA: por retraso; `dias_mora` guarda los días de atraso.
+    #   - OTRAS: infracciones tipificadas en las bases; `concepto` describe la causa.
+    # monto en céntimos (>= 0). prestacion_id/item_id son refs BLANDAS validadas en
+    # ruta (existen + pertenecen al contrato), como en garantias. estado del ciclo
+    # de la penalidad: EN_EVALUACION → APLICADA / EXONERADA.
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS penalidades (
+            id            TEXT    PRIMARY KEY,           -- uuid4().hex
+            contrato_id   TEXT    NOT NULL REFERENCES contratos(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            prestacion_id TEXT,                          -- ref blanda (validada en ruta)
+            item_id       TEXT,                          -- ref blanda (validada en ruta)
+            tipo          TEXT    CHECK (tipo IN ('MORA','OTRAS') OR tipo IS NULL),
+            concepto      TEXT,                          -- causa/descripción de la penalidad
+            monto         INTEGER,                       -- céntimos (S/ x 100), >= 0
+            moneda        TEXT    NOT NULL DEFAULT 'PEN',
+            dias_mora     INTEGER,                       -- días de retraso (solo MORA); NULL en OTRAS
+            base_legal    TEXT,                          -- cláusula/norma que la sustenta
+            fecha         TEXT,                          -- aplicación/detección (ISO)
+            estado        TEXT    CHECK (estado IN ('EN_EVALUACION','APLICADA','EXONERADA') OR estado IS NULL),
+            observaciones TEXT,
+            activo        INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
+            created_at    TEXT    NOT NULL,
+            updated_at    TEXT    NOT NULL
+        )
+        """
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_penalidades_contrato ON penalidades(contrato_id)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_penalidades_prestacion ON penalidades(prestacion_id)"
+    )
+    await db.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_penalidades_updated
+        AFTER UPDATE ON penalidades
+        FOR EACH ROW WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+            UPDATE penalidades SET updated_at = datetime('now','localtime') WHERE id = NEW.id;
+        END
+        """
+    )
     await db.commit()
 
     app["db"] = db
