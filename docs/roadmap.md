@@ -209,7 +209,7 @@ La cáscara `contratos` original (PASO 1, enum `tipo_objeto` combinado, campo `a
 | 6 | `garantias` (fiel cumplimiento, adelantos; UUID PK, `numero_carta_fianza` no único, `prestacion_id`/`item_id` soft; estado sin VENCIDA —derivable—; alertas de vencimiento read-time diseñadas) | ✅ este commit |
 | 7 | `adendas` (UUID PK; tipo AMPLIACION_PLAZO/ADICIONAL/REDUCCION/MODIFICACION_CONVENCIONAL; monto_delta principal/accesorio con signo + plazo_delta_dias; dedup blando por (contrato_id,numero)) | ✅ este commit |
 | 8 | `penalidades` (UUID PK; tipo MORA/OTRAS; monto céntimos + dias_mora; refs blandas prestacion_id/item_id; estado EN_EVALUACION/APLICADA/EXONERADA) | ✅ este commit |
-| 9 | `servicios`/`mantenimientos` (cronograma de ejecución) | ⬜ pendiente |
+| 9 | `servicios_mantenimiento` (cronograma por GE: UUID PK, ge_id FK dura, nro_servicio, fecha_programada vs fecha_ejecutada separadas, estado PROGRAMADO/EJECUTADO/CONFORME/OBSERVADO; alcance derivado del GE) | ✅ este commit |
 | 10 | `adjuntos` (metadata; archivos fuera de SQLite) | ⬜ pendiente |
 
 > **Principio de unicidad segura (regla del proyecto para entidades futuras).** En este modelo de sync la **única unicidad segura es la PK `id`**. El motor aplica creates remotos con `INSERT OR IGNORE`, así que un `UNIQUE` sobre una clave natural (RUC, código…) puede descartar en silencio una de dos filas creadas offline con `id` distintos; si esa fila es **target de una FK** (p.ej. `items_contrato.proveedor_id → proveedores.id`), deja FKs colgando → corrupción. Por eso toda clave natural única adicional debe ser **blanda** (dedup/aviso en la app), **salvo que nada le haga FK** (caso `contratos.numero`, que sí es `UNIQUE`). `proveedores.ruc` va indexado pero NO único. (También en AGENTS.md.)

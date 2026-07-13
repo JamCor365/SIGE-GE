@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 log = logging.getLogger("sige.events")
 
 _VALID_ACTIONS = {"create", "update", "delete"}
-_VALID_ENTITIES = {"grupo_electrogeno", "sede", "macroregion", "tta", "contrato", "contrato_ge", "proveedor", "item_contrato", "prestacion", "garantia", "adenda", "penalidad"}
+_VALID_ENTITIES = {"grupo_electrogeno", "sede", "macroregion", "tta", "contrato", "contrato_ge", "proveedor", "item_contrato", "prestacion", "garantia", "adenda", "penalidad", "servicio"}
 
 
 def make_event(

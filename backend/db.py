@@ -575,6 +575,51 @@ async def init_db(app: web.Application, db_path: Path | None = None) -> None:
         END
         """
     )
+
+    # Servicios de mantenimiento: cronograma de ejecución de la prestación
+    # accesoria, UNO POR (GE × nro_servicio) — el mantenimiento es del equipo
+    # (decisión de granularidad: permite rastrear qué GE tuvo su MPV-N y cuál no).
+    # El alcance geográfico (sede/macro) NO se almacena: se DERIVA del GE.
+    #
+    # PK = UUID surrogate (entidad creada de forma distribuida). ge_id es FK dura a
+    # grupos_electrogenos (como contrato_ge). prestacion_id es ref BLANDA opcional a
+    # la prestación accesoria (validada en ruta). FECHAS SEPARADAS por origen, como
+    # en sg-valtom: fecha_programada (cronograma) vs fecha_ejecutada (ejecución
+    # real) — nunca se pisan. estado del ciclo del servicio.
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS servicios_mantenimiento (
+            id                TEXT    PRIMARY KEY,           -- uuid4().hex
+            contrato_id       TEXT    NOT NULL REFERENCES contratos(id)          ON UPDATE CASCADE ON DELETE RESTRICT,
+            ge_id             INTEGER NOT NULL REFERENCES grupos_electrogenos(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            prestacion_id     TEXT,                          -- ref blanda a la prestación accesoria (validada en ruta)
+            nro_servicio      INTEGER NOT NULL,              -- 1..N (secuencia del cronograma, p.ej. MPV1..MPV4)
+            fecha_programada  TEXT,                          -- cronograma (ISO)
+            fecha_ejecutada   TEXT,                          -- ejecución real (ISO); separada de la programada
+            estado            TEXT    CHECK (estado IN ('PROGRAMADO','EJECUTADO','CONFORME','OBSERVADO') OR estado IS NULL),
+            observaciones     TEXT,
+            activo            INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
+            created_at        TEXT    NOT NULL,
+            updated_at        TEXT    NOT NULL
+        )
+        """
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_servicios_contrato ON servicios_mantenimiento(contrato_id)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_servicios_ge ON servicios_mantenimiento(ge_id)"
+    )
+    await db.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_servicios_updated
+        AFTER UPDATE ON servicios_mantenimiento
+        FOR EACH ROW WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+            UPDATE servicios_mantenimiento SET updated_at = datetime('now','localtime') WHERE id = NEW.id;
+        END
+        """
+    )
     await db.commit()
 
     app["db"] = db
