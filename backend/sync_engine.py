@@ -29,6 +29,7 @@ _ENTITY_TABLE = {
     "item_contrato": "items_contrato",
     "prestacion": "prestaciones",
     "garantia": "garantias",
+    "adenda": "adendas",
 }
 
 

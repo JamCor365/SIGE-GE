@@ -8,7 +8,7 @@ FRONTEND = Path("frontend")
 
 from backend.config import load_config
 from backend.db import close_db, init_db
-from backend.routes import contrato_ge, contratos, garantias, grupos, items_contrato, macroregiones, prestaciones, proveedores, sedes, sync, tta
+from backend.routes import adendas, contrato_ge, contratos, garantias, grupos, items_contrato, macroregiones, prestaciones, proveedores, sedes, sync, tta
 from backend.snapshot import _maybe_generate_snapshot, apply_post_snapshot_events, recover_state
 from backend.storage import get_backend
 
@@ -142,6 +142,11 @@ def create_app() -> web.Application:
     app.router.add_post("/api/contratos/{id}/garantias", garantias.create_garantia)
     app.router.add_put("/api/contratos/{id}/garantias/{garantia_id}", garantias.update_garantia)
     app.router.add_delete("/api/contratos/{id}/garantias/{garantia_id}", garantias.delete_garantia)
+
+    app.router.add_get("/api/contratos/{id}/adendas", adendas.list_adendas)
+    app.router.add_post("/api/contratos/{id}/adendas", adendas.create_adenda)
+    app.router.add_put("/api/contratos/{id}/adendas/{adenda_id}", adendas.update_adenda)
+    app.router.add_delete("/api/contratos/{id}/adendas/{adenda_id}", adendas.delete_adenda)
 
     app.router.add_get("/api/proveedores", proveedores.list_proveedores)
     app.router.add_get("/api/proveedores/{id}", proveedores.get_proveedor)

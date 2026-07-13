@@ -473,6 +473,57 @@ async def init_db(app: web.Application, db_path: Path | None = None) -> None:
         END
         """
     )
+
+    # Adendas: modificaciones al contrato tras su firma (Ley de Contrataciones del
+    # Estado). PK = UUID surrogate (como prestaciones/garantias): entidad creada de
+    # forma distribuida; `numero` (1=Primera, 2=Segunda…) es el identificador humano
+    # pero NO es PK ni UNIQUE — el dedup por (contrato_id, numero) es BLANDO en la
+    # ruta (dos máquinas offline no deben descartar en silencio una de dos filas con
+    # UUID distinto; principio de unicidad segura del proyecto). Nada le hace FK.
+    #
+    # MONTO DELTA SEPARADO principal/accesorio (INTEGER céntimos CON SIGNO, negativo
+    # si reduce): una misma adenda puede tocar ambas prestaciones con montos
+    # distintos (confirmado en la Primera Adenda real del 28278-2022-BN, que reduce
+    # principal y accesoria por separado). Espeja el split de `contratos` y permite
+    # derivar el monto vigente por tipo de prestación read-time (base + Σ deltas).
+    # plazo_delta_dias: variación de plazo (ampliaciones); NULL si no toca plazo.
+    #
+    # tipo (CHECK vocab): REDUCCION y MODIFICACION_CONVENCIONAL son los 2 tipos
+    # reales del contrato Valtom (Primera=reducción, Segunda=incorpora anexo SLA);
+    # AMPLIACION_PLAZO y ADICIONAL completan los estándar de la Ley.
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS adendas (
+            id                    TEXT    PRIMARY KEY,           -- uuid4().hex
+            contrato_id           TEXT    NOT NULL REFERENCES contratos(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            numero                INTEGER NOT NULL,              -- 1=Primera, 2=Segunda… (dedup blando por (contrato_id,numero))
+            fecha                 TEXT,                          -- suscripción de la adenda (ISO)
+            tipo                  TEXT    CHECK (tipo IN ('AMPLIACION_PLAZO','ADICIONAL','REDUCCION','MODIFICACION_CONVENCIONAL') OR tipo IS NULL),
+            base_legal            TEXT,                          -- artículo/norma que la sustenta
+            objeto                TEXT,                          -- qué modifica (resumen)
+            monto_delta_principal INTEGER,                       -- céntimos con signo; NULL si no toca principal
+            monto_delta_accesorio INTEGER,                       -- céntimos con signo; NULL si no toca accesoria
+            plazo_delta_dias      INTEGER,                       -- variación de plazo en días; NULL si no toca plazo
+            observaciones         TEXT,
+            activo                INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
+            created_at            TEXT    NOT NULL,
+            updated_at            TEXT    NOT NULL
+        )
+        """
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_adendas_contrato ON adendas(contrato_id)"
+    )
+    await db.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_adendas_updated
+        AFTER UPDATE ON adendas
+        FOR EACH ROW WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+            UPDATE adendas SET updated_at = datetime('now','localtime') WHERE id = NEW.id;
+        END
+        """
+    )
     await db.commit()
 
     app["db"] = db
