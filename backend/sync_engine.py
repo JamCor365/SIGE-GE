@@ -32,6 +32,7 @@ _ENTITY_TABLE = {
     "adenda": "adendas",
     "penalidad": "penalidades",
     "servicio": "servicios_mantenimiento",
+    "adjunto": "adjuntos",
 }
 
 

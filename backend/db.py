@@ -620,6 +620,54 @@ async def init_db(app: web.Application, db_path: Path | None = None) -> None:
         END
         """
     )
+
+    # Adjuntos: METADATA de archivos (actas, informes, guías, fotos…). El ARCHIVO
+    # vive en SharePoint, NO en SQLite: aquí solo su ruta/enlace + integridad, para
+    # no inflar la base ni romper el sync. PK = UUID surrogate.
+    #
+    # Puntero POLIMÓRFICO BLANDO al objeto que documenta: ref_entidad (token, p.ej.
+    # 'adenda'/'servicio'/'penalidad') + ref_id (id de esa fila). NO es FK — no se
+    # puede FK polimórficamente; es metadata, se valida en la capa de app si hace
+    # falta. contrato_id sí es FK dura (todo adjunto cuelga de un contrato).
+    #
+    # tipo (CHECK vocab): tomado de sg-valtom (documento.tipo), el mismo universo de
+    # documentos del legajo del Estado.
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS adjuntos (
+            id            TEXT    PRIMARY KEY,           -- uuid4().hex
+            contrato_id   TEXT    NOT NULL REFERENCES contratos(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+            ref_entidad   TEXT,                          -- token de la entidad relacionada (soft, polimórfico)
+            ref_id        TEXT,                          -- id de esa entidad (soft, NO FK)
+            tipo          TEXT    CHECK (tipo IN ('CONTRATO','BASES','ADENDA','ACTA_CONFORMIDAD','INFORME_TECNICO','GUIA_REMISION','PANEL_FOTOGRAFICO','CONSTANCIA_OPERATIVIDAD','CARTA_FIANZA','OTRO') OR tipo IS NULL),
+            nombre        TEXT,                          -- nombre/título del archivo
+            ruta          TEXT,                          -- ruta/enlace en SharePoint (el archivo vive FUERA de SQLite)
+            sha256        TEXT,                          -- integridad (NO único: un archivo puede repetirse)
+            paginas       INTEGER,
+            fecha         TEXT,                          -- fecha del documento (ISO)
+            observaciones TEXT,
+            activo        INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
+            created_at    TEXT    NOT NULL,
+            updated_at    TEXT    NOT NULL
+        )
+        """
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_adjuntos_contrato ON adjuntos(contrato_id)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_adjuntos_ref ON adjuntos(ref_entidad, ref_id)"
+    )
+    await db.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_adjuntos_updated
+        AFTER UPDATE ON adjuntos
+        FOR EACH ROW WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+            UPDATE adjuntos SET updated_at = datetime('now','localtime') WHERE id = NEW.id;
+        END
+        """
+    )
     await db.commit()
 
     app["db"] = db
