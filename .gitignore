@@ -40,3 +40,6 @@ frontend_audit_shots/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Memoria local de Engram (no versionar)
+.engram/
