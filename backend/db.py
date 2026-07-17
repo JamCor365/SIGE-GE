@@ -109,6 +109,93 @@ async def _migrate_sedes(db: aiosqlite.Connection) -> None:
     await db.execute(_V_SEDES_COMPLETO)
 
 
+# Enriquecimiento del inventario GE/TTA con la data verificada de Valtom (specs
+# completas, garantía y atributos de monitoreo de red), y vínculo TTA↔GE.
+# CREATE TABLE del schema no altera tablas existentes → las cache.db previas se
+# migran aquí con ALTER TABLE ADD COLUMN (idempotente). Nullable: los GE/TTA ya
+# cargados conservan su estado sin estos campos hasta poblarlos.
+_GRUPOS_NEW_COLUMNS = {
+    "etiqueta": "TEXT",
+    "potencia_efectiva_kw": "REAL",
+    "voltaje": "TEXT",
+    "frecuencia": "TEXT",
+    "cod_fabricante": "TEXT",
+    "fecha_garantia_ini": "TEXT",
+    "fecha_garantia_fin": "TEXT",
+    "red_ip": "TEXT",
+    "red_mascara": "TEXT",
+    "red_gateway": "TEXT",
+}
+
+# ge_id: el TTA cuelga del GE que sirve (modelo Valtom). FK dura pero NULLABLE:
+# ALTER TABLE ADD COLUMN con REFERENCES exige default NULL, y los TTA heredados
+# aún no tienen GE asignado. ON DELETE RESTRICT: no borrar un GE con TTA vivo.
+_TTA_NEW_COLUMNS = {
+    "ge_id": "INTEGER REFERENCES grupos_electrogenos(id) ON UPDATE CASCADE ON DELETE RESTRICT",
+    "etiqueta": "TEXT",
+}
+
+# Vistas canónicas GE/TTA — idénticas a docs/schema.sql; se recrean en la
+# migración para exponer las columnas nuevas en DBs heredadas.
+_V_GE_COMPLETO = """
+CREATE VIEW v_ge_completo AS
+SELECT g.id, g.cod_margesi, g.etiqueta, g.estado, g.anio_fabricacion,
+       g.potencia_kw, g.potencia_efectiva_kw, g.voltaje, g.frecuencia,
+       g.fase_electrica, g.tipo_transferencia, g.mecanismo_transferencia,
+       g.marca_ensamblador, g.modelo_ensamblador, g.serie_ensamblador, g.cod_fabricante,
+       g.marca_motor, g.modelo_motor, g.serie_motor,
+       g.marca_alternador, g.modelo_alternador, g.serie_alternador,
+       g.marca_modulocontrol, g.modelo_modulocontrol, g.serie_modulocontrol,
+       g.fecha_garantia_ini, g.fecha_garantia_fin,
+       g.red_ip, g.red_mascara, g.red_gateway,
+       s.id AS sede_id, s.codigo AS sede_codigo, s.nombre_agencia,
+       m.nombre AS macroregion,
+       g.activo, g.created_at, g.updated_at
+FROM grupos_electrogenos g
+JOIN sedes s         ON s.id = g.sede_id
+JOIN macroregiones m ON m.id = s.macroregion_id
+"""
+
+_V_TTA_COMPLETO = """
+CREATE VIEW v_tta_completo AS
+SELECT t.id, t.ge_id, t.cod_margesi, t.etiqueta, t.marca, t.modelo, t.serie,
+       t.tipo_mecanismo, t.fases, t.estado,
+       s.id AS sede_id, s.codigo AS sede_codigo, s.nombre_agencia,
+       m.nombre AS macroregion,
+       t.activo, t.created_at, t.updated_at
+FROM tta t
+JOIN sedes s         ON s.id = t.sede_id
+JOIN macroregiones m ON m.id = s.macroregion_id
+"""
+
+
+async def _migrate_grupos(db: aiosqlite.Connection) -> None:
+    """Añade specs/garantía/red de Valtom a `grupos_electrogenos` y recrea su vista.
+
+    En una DB nueva (schema.sql ya trae las columnas y la vista finales) todo es
+    no-op salvo el DROP/CREATE de la vista, que la deja idéntica.
+    """
+    async with db.execute("PRAGMA table_info(grupos_electrogenos)") as cur:
+        cols = {row[1] for row in await cur.fetchall()}
+    for name, decl in _GRUPOS_NEW_COLUMNS.items():
+        if name not in cols:
+            await db.execute(f"ALTER TABLE grupos_electrogenos ADD COLUMN {name} {decl}")
+    await db.execute("DROP VIEW IF EXISTS v_ge_completo")
+    await db.execute(_V_GE_COMPLETO)
+
+
+async def _migrate_tta(db: aiosqlite.Connection) -> None:
+    """Añade el vínculo ge_id y `etiqueta` a `tta` y recrea su vista (idempotente)."""
+    async with db.execute("PRAGMA table_info(tta)") as cur:
+        cols = {row[1] for row in await cur.fetchall()}
+    for name, decl in _TTA_NEW_COLUMNS.items():
+        if name not in cols:
+            await db.execute(f"ALTER TABLE tta ADD COLUMN {name} {decl}")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_tta_ge ON tta(ge_id)")
+    await db.execute("DROP VIEW IF EXISTS v_tta_completo")
+    await db.execute(_V_TTA_COMPLETO)
+
+
 async def init_db(app: web.Application, db_path: Path | None = None) -> None:
     if db_path is None:
         db_path = DB_PATH
@@ -159,6 +246,11 @@ async def init_db(app: web.Application, db_path: Path | None = None) -> None:
 
     # Geolocalización de sedes (columnas + vista); idempotente.
     await _migrate_sedes(db)
+
+    # Enriquecimiento GE/TTA con la data verificada de Valtom (specs, garantía,
+    # monitoreo de red) + vínculo TTA↔GE; idempotente.
+    await _migrate_grupos(db)
+    await _migrate_tta(db)
 
     # Contratos: entidad creada de forma distribuida → PK es un UUID opaco
     # (generado en el backend al crear), no un id natural ni autoincrement.

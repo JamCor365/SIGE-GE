@@ -98,3 +98,36 @@ async def test_eventos_synced_ok(client, prereqs):
     r = await client.get("/api/sync/pending")
     data = await r.json()
     assert data["pending_db"] == 0
+
+
+async def test_campos_valtom_roundtrip(client, prereqs):
+    """Los atributos nuevos (specs, garantía, monitoreo de red) viajan en el
+    create y vuelven en el GET vía la vista v_ge_completo."""
+    r = await client.post("/api/grupos", json={
+        "id": 1, "sede_id": prereqs["sede_id"],
+        "etiqueta": "46226507000839",
+        "potencia_efectiva_kw": 27.5, "voltaje": "220VAC", "frecuencia": "60Hz",
+        "cod_fabricante": "TD-EC35X",
+        "fecha_garantia_ini": "2022-06-01", "fecha_garantia_fin": "2024-06-01",
+        "red_ip": "10.20.30.40", "red_mascara": "255.255.255.0", "red_gateway": "10.20.30.1",
+    })
+    assert r.status == 201
+    get = await client.get("/api/grupos/1")
+    assert get.status == 200
+    d = (await get.json())["data"]
+    assert d["etiqueta"] == "46226507000839"
+    assert d["potencia_efectiva_kw"] == 27.5
+    assert d["voltaje"] == "220VAC"
+    assert d["frecuencia"] == "60Hz"
+    assert d["cod_fabricante"] == "TD-EC35X"
+    assert d["fecha_garantia_fin"] == "2024-06-01"
+    assert d["red_ip"] == "10.20.30.40"
+    assert d["red_gateway"] == "10.20.30.1"
+
+
+async def test_update_campo_monitoreo(client, prereqs):
+    """La IP de monitoreo es actualizable vía PUT."""
+    await client.post("/api/grupos", json={"id": 1, "sede_id": prereqs["sede_id"]})
+    r = await client.put("/api/grupos/1", json={"red_ip": "192.168.1.5"})
+    assert r.status == 200
+    assert (await r.json())["data"]["red_ip"] == "192.168.1.5"

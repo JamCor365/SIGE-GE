@@ -13,7 +13,9 @@ VIEW = "v_tta_completo"
 INSERTABLE_FIELDS = {
     "id",
     "sede_id",
+    "ge_id",
     "cod_margesi",
+    "etiqueta",
     "marca",
     "modelo",
     "serie",

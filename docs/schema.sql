@@ -63,15 +63,20 @@ CREATE TABLE grupos_electrogenos (
     id                         INTEGER PRIMARY KEY,    -- ID_GE natural
     sede_id                    INTEGER NOT NULL,
     cod_margesi                TEXT,                   -- código patrimonial Banco de la Nación
+    etiqueta                   TEXT,                   -- código de etiqueta patrimonial BN (fuente Valtom)
     estado                     TEXT    CHECK (estado IN ('OPERATIVO','INOPERATIVO') OR estado IS NULL),
     anio_fabricacion           INTEGER,
-    potencia_kw                REAL,
+    potencia_kw                REAL,                   -- potencia standby (nominal)
+    potencia_efectiva_kw       REAL,                   -- potencia efectiva/continua
+    voltaje                    TEXT,                   -- p.ej. '220VAC'
+    frecuencia                 TEXT,                   -- p.ej. '60Hz'
     fase_electrica             TEXT    CHECK (fase_electrica IN ('MONOFASICO','TRIFASICO') OR fase_electrica IS NULL),
     tipo_transferencia         TEXT    CHECK (tipo_transferencia IN ('AUTOMATICO','MANUAL') OR tipo_transferencia IS NULL),
     mecanismo_transferencia    TEXT,
     marca_ensamblador          TEXT,
     modelo_ensamblador         TEXT,
     serie_ensamblador          TEXT,
+    cod_fabricante             TEXT,                   -- código de fábrica del ensamblador
     marca_motor                TEXT,
     modelo_motor               TEXT,
     serie_motor                TEXT,
@@ -81,6 +86,11 @@ CREATE TABLE grupos_electrogenos (
     marca_modulocontrol        TEXT,
     modelo_modulocontrol       TEXT,
     serie_modulocontrol        TEXT,
+    fecha_garantia_ini         TEXT,                   -- ISO; proxy de conformidad/instalación (Valtom)
+    fecha_garantia_fin         TEXT,                   -- ISO (fin de garantía)
+    red_ip                     TEXT,                   -- monitoreo: IP del GE (a poblar)
+    red_mascara                TEXT,                   -- monitoreo: máscara de red
+    red_gateway                TEXT,                   -- monitoreo: gateway
     observaciones              TEXT,
     activo                     INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0,1)),
     created_at                 TEXT    NOT NULL,       -- mapea Fecha_Registro
@@ -99,7 +109,9 @@ CREATE INDEX idx_ge_margesi  ON grupos_electrogenos(cod_margesi);
 CREATE TABLE tta (
     id              INTEGER PRIMARY KEY,        -- ID_TTA natural
     sede_id         INTEGER NOT NULL,
+    ge_id           INTEGER,                    -- GE al que sirve el TTA (Valtom modela el TTA colgando del GE); nullable
     cod_margesi     TEXT,
+    etiqueta        TEXT,                       -- código de etiqueta patrimonial BN (fuente Valtom)
     marca           TEXT,
     modelo          TEXT,
     serie           TEXT,
@@ -111,10 +123,13 @@ CREATE TABLE tta (
     created_at      TEXT    NOT NULL,           -- mapea Fecha_Registro
     updated_at      TEXT    NOT NULL,           -- mapea Fecha_Actualizacion
     FOREIGN KEY (sede_id) REFERENCES sedes(id)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    FOREIGN KEY (ge_id) REFERENCES grupos_electrogenos(id)
         ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
 CREATE INDEX idx_tta_sede    ON tta(sede_id);
+CREATE INDEX idx_tta_ge      ON tta(ge_id);
 CREATE INDEX idx_tta_margesi ON tta(cod_margesi);
 
 -- ---------------------------------------------------------------------
@@ -162,12 +177,15 @@ FROM sedes s
 JOIN macroregiones m ON m.id = s.macroregion_id;
 
 CREATE VIEW v_ge_completo AS
-SELECT g.id, g.cod_margesi, g.estado, g.anio_fabricacion, g.potencia_kw,
+SELECT g.id, g.cod_margesi, g.etiqueta, g.estado, g.anio_fabricacion,
+       g.potencia_kw, g.potencia_efectiva_kw, g.voltaje, g.frecuencia,
        g.fase_electrica, g.tipo_transferencia, g.mecanismo_transferencia,
-       g.marca_ensamblador, g.modelo_ensamblador, g.serie_ensamblador,
+       g.marca_ensamblador, g.modelo_ensamblador, g.serie_ensamblador, g.cod_fabricante,
        g.marca_motor, g.modelo_motor, g.serie_motor,
        g.marca_alternador, g.modelo_alternador, g.serie_alternador,
        g.marca_modulocontrol, g.modelo_modulocontrol, g.serie_modulocontrol,
+       g.fecha_garantia_ini, g.fecha_garantia_fin,
+       g.red_ip, g.red_mascara, g.red_gateway,
        s.id AS sede_id, s.codigo AS sede_codigo, s.nombre_agencia,
        m.nombre AS macroregion,
        g.activo, g.created_at, g.updated_at
@@ -176,7 +194,7 @@ JOIN sedes s         ON s.id = g.sede_id
 JOIN macroregiones m ON m.id = s.macroregion_id;
 
 CREATE VIEW v_tta_completo AS
-SELECT t.id, t.cod_margesi, t.marca, t.modelo, t.serie,
+SELECT t.id, t.ge_id, t.cod_margesi, t.etiqueta, t.marca, t.modelo, t.serie,
        t.tipo_mecanismo, t.fases, t.estado,
        s.id AS sede_id, s.codigo AS sede_codigo, s.nombre_agencia,
        m.nombre AS macroregion,
