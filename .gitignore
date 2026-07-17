@@ -46,3 +46,6 @@ desktop.ini
 
 # Documentos/datos fuente del banco (no versionar)
 docs/Elementos/
+
+# Propuesta generada por valtom_extract.py (artefacto, no versionar)
+tools_scripts/valtom_propuesta.json
