@@ -43,3 +43,6 @@ desktop.ini
 
 # Memoria local de Engram (no versionar)
 .engram/
+
+# Documentos/datos fuente del banco (no versionar)
+docs/Elementos/
