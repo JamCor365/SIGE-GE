@@ -27,12 +27,122 @@ function formatMonto(centimos, moneda = "PEN") {
 const tiposLabel = r => (Array.isArray(r.tipos_objeto) && r.tipos_objeto.length ? r.tipos_objeto.join(" + ") : "—");
 const opts = arr => arr.map(v => ({ value: v, label: v }));
 
+// Opciones de selects FK. Ni /proveedores ni /grupos filtran por activo — se
+// descartan aquí para no ofrecer filas dadas de baja.
+const activos = rows => (rows || []).filter(r => r.activo !== 0);
+const itemLabel = i => `Ítem ${i.numero_item}${i.descripcion ? ` — ${i.descripcion}` : ""}`;
+const itemsOptions = async cid =>
+    activos((await api.get(`/contratos/${cid}/items`)).data).map(i => ({ value: i.id, label: itemLabel(i) }));
+// id → etiqueta, para resolver las FK que los listados devuelven crudas.
+const itemsMap = async cid =>
+    new Map(activos((await api.get(`/contratos/${cid}/items`)).data).map(i => [i.id, itemLabel(i)]));
+const prestacionesOptions = async cid =>
+    activos((await api.get(`/contratos/${cid}/prestaciones`)).data).map(p => ({
+        value: p.id,
+        label: `${p.clase}${p.numero_prestacion != null ? ` #${p.numero_prestacion}` : ""}${p.descripcion ? ` — ${p.descripcion}` : ""}`,
+    }));
+
 // Sub-entidades del contrato mostradas en el detalle (paneles CRUD reutilizables).
+// Orden: estructura del contrato (ítems → prestaciones → garantías), luego
+// modificaciones y sanciones, luego operación (GE → servicios) y documentos.
 const SUBENTITY_CONFIGS = [
+    {
+        title: "Ítems", singular: "Ítem", gender: "m",
+        path: cid => `/contratos/${cid}/items`,
+        // Direcciona por numero_item, no por id (el id es "{contrato_id}_{numero_item}").
+        itemPath: (cid, r) => `/contratos/${cid}/items/${r.numero_item}`,
+        columns: [
+            { header: "N°", accessor: r => r.numero_item ?? "—" },
+            { header: "Descripción", accessor: r => r.descripcion || "—" },
+            { header: "Proveedor", accessor: r => r.proveedor_label || "—" },
+            { header: "Monto", accessor: r => formatMonto(r.monto, r.moneda) },
+            { header: "Estado", accessor: r => r.estado || "—" },
+        ],
+        enrich: async (cid, rows) => {
+            if (!rows.some(r => r.proveedor_id)) return rows;
+            const provs = new Map(activos((await api.get("/proveedores")).data).map(p => [p.id, p.razon_social]));
+            return rows.map(r => ({ ...r, proveedor_label: r.proveedor_id ? provs.get(r.proveedor_id) || r.proveedor_id : null }));
+        },
+        fields: [
+            // Inmutable: define el id de la fila. Corregirlo = baja + recrear.
+            { name: "numero_item", label: "N° de ítem", type: "number", required: true, immutable: true },
+            { name: "descripcion", label: "Descripción", type: "text", fullWidth: true },
+            { name: "proveedor_id", label: "Proveedor adjudicatario", type: "select" },
+            { name: "monto", label: "Monto (S/)", type: "number", step: "0.01" },
+            { name: "moneda", label: "Moneda", type: "select", options: [{ value: "PEN", label: "PEN (S/)" }, { value: "USD", label: "USD ($)" }] },
+            { name: "estado", label: "Estado", type: "select", options: opts(["EN_EVALUACION", "ADJUDICADO", "DESIERTO"]) },
+            { name: "observaciones", label: "Observaciones", type: "textarea", fullWidth: true },
+        ],
+        montoFields: ["monto"],
+        loadOptions: async () => ({
+            proveedor_id: activos((await api.get("/proveedores")).data).map(p => ({ value: p.id, label: p.razon_social })),
+        }),
+    },
+    {
+        title: "Prestaciones", singular: "Prestación",
+        path: cid => `/contratos/${cid}/prestaciones`,
+        itemPath: (cid, r) => `/contratos/${cid}/prestaciones/${r.id}`,
+        columns: [
+            { header: "N°", accessor: r => r.numero_prestacion ?? "—" },
+            { header: "Clase", accessor: r => r.clase || "—" },
+            { header: "Tipo", accessor: tiposLabel },
+            { header: "Descripción", accessor: r => r.descripcion || "—" },
+            { header: "Monto", accessor: r => formatMonto(r.monto, r.moneda) },
+            { header: "Plazo (días)", accessor: r => r.plazo_dias ?? "—" },
+        ],
+        fields: [
+            { name: "clase", label: "Clase", type: "select", required: true, options: opts(["PRINCIPAL", "ACCESORIA"]) },
+            { name: "numero_prestacion", label: "N° de prestación", type: "number" },
+            // Vacío = descomposición a nivel contrato; seteado = a nivel ítem.
+            { name: "item_id", label: "Ítem (vacío = nivel contrato)", type: "select" },
+            { name: "tipos_objeto", label: "Tipo de objeto", type: "multiselect", options: opts(TIPOS_OBJETO), fullWidth: true },
+            { name: "descripcion", label: "Descripción", type: "text", fullWidth: true },
+            { name: "monto", label: "Monto (S/)", type: "number", step: "0.01" },
+            { name: "moneda", label: "Moneda", type: "select", options: [{ value: "PEN", label: "PEN (S/)" }, { value: "USD", label: "USD ($)" }] },
+            { name: "plazo_dias", label: "Plazo (días)", type: "number" },
+            { name: "observaciones", label: "Observaciones", type: "textarea", fullWidth: true },
+        ],
+        montoFields: ["monto"],
+        loadOptions: async cid => ({ item_id: await itemsOptions(cid) }),
+    },
+    {
+        title: "Garantías", singular: "Garantía",
+        path: cid => `/contratos/${cid}/garantias`,
+        itemPath: (cid, r) => `/contratos/${cid}/garantias/${r.id}`,
+        columns: [
+            { header: "Tipo", accessor: r => r.tipo || "—" },
+            { header: "Modalidad", accessor: r => r.modalidad || "—" },
+            { header: "N° carta fianza", accessor: r => r.numero_carta_fianza || "—" },
+            { header: "Emisora", accessor: r => r.entidad_emisora || "—" },
+            { header: "Monto", accessor: r => formatMonto(r.monto, r.moneda) },
+            { header: "Vence", accessor: r => r.fecha_vencimiento || "—" },
+            { header: "Estado", accessor: r => r.estado || "—" },
+        ],
+        fields: [
+            { name: "tipo", label: "Tipo", type: "select", options: opts(["FIEL_CUMPLIMIENTO", "ADELANTO_DIRECTO", "ADELANTO_MATERIALES", "MONTO_DIFERENCIAL"]) },
+            { name: "modalidad", label: "Modalidad", type: "select", options: opts(["CARTA_FIANZA", "SEGURO_CAUCION", "DEPOSITO"]) },
+            { name: "numero_carta_fianza", label: "N° de carta fianza", type: "text" },
+            { name: "entidad_emisora", label: "Entidad emisora", type: "text" },
+            { name: "monto", label: "Monto (S/)", type: "number", step: "0.01" },
+            { name: "moneda", label: "Moneda", type: "select", options: [{ value: "PEN", label: "PEN (S/)" }, { value: "USD", label: "USD ($)" }] },
+            { name: "fecha_emision", label: "Fecha de emisión", type: "date" },
+            { name: "fecha_vencimiento", label: "Fecha de vencimiento", type: "date" },
+            // El vocabulario no incluye VENCIDA a propósito: eso se deriva de fecha_vencimiento.
+            { name: "estado", label: "Estado", type: "select", options: opts(["VIGENTE", "EJECUTADA", "DEVUELTA"]) },
+            { name: "prestacion_id", label: "Prestación (opcional)", type: "select" },
+            { name: "item_id", label: "Ítem (opcional)", type: "select" },
+            { name: "observaciones", label: "Observaciones", type: "textarea", fullWidth: true },
+        ],
+        montoFields: ["monto"],
+        loadOptions: async cid => ({
+            prestacion_id: await prestacionesOptions(cid),
+            item_id: await itemsOptions(cid),
+        }),
+    },
     {
         title: "Adendas", singular: "Adenda",
         path: cid => `/contratos/${cid}/adendas`,
-        itemPath: (cid, id) => `/contratos/${cid}/adendas/${id}`,
+        itemPath: (cid, r) => `/contratos/${cid}/adendas/${r.id}`,
         columns: [
             { header: "N°", accessor: r => r.numero ?? "—" },
             { header: "Tipo", accessor: r => r.tipo || "—" },
@@ -56,7 +166,7 @@ const SUBENTITY_CONFIGS = [
     {
         title: "Penalidades", singular: "Penalidad",
         path: cid => `/contratos/${cid}/penalidades`,
-        itemPath: (cid, id) => `/contratos/${cid}/penalidades/${id}`,
+        itemPath: (cid, r) => `/contratos/${cid}/penalidades/${r.id}`,
         columns: [
             { header: "Tipo", accessor: r => r.tipo || "—" },
             { header: "Monto", accessor: r => formatMonto(r.monto) },
@@ -77,9 +187,42 @@ const SUBENTITY_CONFIGS = [
         montoFields: ["monto"],
     },
     {
-        title: "Servicios de mantenimiento", singular: "Servicio",
+        // Puente N:M, no CRUD: el backend expone vincular (POST) y desvincular
+        // (DELETE por ge_id), sin PUT — de ahí noEdit. El listado devuelve
+        // link_id/ge_id y NO una columna `id`.
+        title: "Grupos electrógenos vinculados", singular: "GE", gender: "m",
+        addLabel: "+ Vincular GE",
+        deleteLabel: "Desvincular",
+        deleteConfirm: "¿Desvincular este grupo electrógeno del contrato?",
+        noEdit: true,
+        path: cid => `/contratos/${cid}/ge`,
+        itemPath: (cid, r) => `/contratos/${cid}/ge/${r.ge_id}`,
+        columns: [
+            { header: "GE", accessor: r => r.ge_id ?? "—" },
+            { header: "Margesí", accessor: r => r.cod_margesi || "—" },
+            { header: "Sede", accessor: r => r.sede_id ?? "—" },
+            { header: "Estado GE", accessor: r => r.estado || "—" },
+            { header: "Ítem", accessor: r => r.item_label || "—" },
+        ],
+        enrich: async (cid, rows) => {
+            if (!rows.some(r => r.item_id)) return rows;
+            const items = await itemsMap(cid);
+            return rows.map(r => ({ ...r, item_label: r.item_id ? items.get(r.item_id) || r.item_id : null }));
+        },
+        fields: [
+            { name: "ge_id", label: "Grupo electrógeno", type: "select", required: true },
+            { name: "item_id", label: "Ítem (opcional)", type: "select" },
+        ],
+        intFields: ["ge_id"],
+        loadOptions: async cid => ({
+            ge_id: activos((await api.get("/grupos")).data).map(g => ({ value: g.id, label: `GE ${g.id}${g.cod_margesi ? ` — ${g.cod_margesi}` : ""}${g.sede_id ? ` — sede ${g.sede_id}` : ""}` })),
+            item_id: await itemsOptions(cid),
+        }),
+    },
+    {
+        title: "Servicios de mantenimiento", singular: "Servicio", gender: "m",
         path: cid => `/contratos/${cid}/servicios`,
-        itemPath: (cid, id) => `/contratos/${cid}/servicios/${id}`,
+        itemPath: (cid, r) => `/contratos/${cid}/servicios/${r.id}`,
         columns: [
             { header: "GE", accessor: r => r.ge_id ?? "—" },
             { header: "N° Serv.", accessor: r => r.nro_servicio ?? "—" },
@@ -102,9 +245,9 @@ const SUBENTITY_CONFIGS = [
         },
     },
     {
-        title: "Adjuntos", singular: "Adjunto",
+        title: "Adjuntos", singular: "Adjunto", gender: "m",
         path: cid => `/contratos/${cid}/adjuntos`,
-        itemPath: (cid, id) => `/contratos/${cid}/adjuntos/${id}`,
+        itemPath: (cid, r) => `/contratos/${cid}/adjuntos/${r.id}`,
         columns: [
             { header: "Tipo", accessor: r => r.tipo || "—" },
             { header: "Nombre", accessor: r => r.nombre || "—" },

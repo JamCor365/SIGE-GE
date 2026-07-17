@@ -5,13 +5,21 @@
 // config: {
 //   key, title, singular,
 //   path:      (cid)      => "/contratos/{cid}/adendas",       // list + create
-//   itemPath:  (cid, id)  => "/contratos/{cid}/adendas/{id}",  // put + delete
+//   itemPath:  (cid, row) => "/contratos/{cid}/adendas/{id}",  // put + delete
 //   columns:   [ {header, key|accessor|render} ],              // tabla
 //   fields:    [ ...descriptores de _form_helpers ],           // formulario
 //   montoFields?: ["monto"],       // soles en el form ↔ céntimos en la API
 //   intFields?:   ["ge_id"],       // selects que deben viajar como enteros
 //   loadOptions?: async (cid) => ({ ge_id: [{value,label}], … }),  // pobla selects FK
+//   enrich?:      async (cid, rows) => rows,   // decora filas antes de la tabla
+//   noEdit?:      true,            // la entidad no expone PUT (p.ej. contrato_ge)
+//   gender?:      "m" | "f",       // concordancia de los toasts; "f" por defecto
+//   addLabel?, deleteLabel?, deleteConfirm?,   // textos; hay defaults razonables
 // }
+//
+// itemPath recibe la FILA, no el id: la ruta de cada entidad no siempre se
+// construye con `id` — items_contrato direcciona por `numero_item` y contrato_ge
+// por `ge_id` (cuyo listado ni siquiera devuelve una columna `id`).
 import { api } from "../api.js";
 import { renderTable } from "../components/table.js";
 import { openModal, createModalHeader, createModalFooter } from "../components/modal.js";
@@ -36,7 +44,7 @@ export function renderSubentityPanel(contratoId, config) {
     head.appendChild(h3);
     const btnAdd = document.createElement("button");
     btnAdd.className = "btn btn--primary btn--sm";
-    btnAdd.textContent = `+ ${config.singular}`;
+    btnAdd.textContent = config.addLabel || `+ ${config.singular}`;
     btnAdd.addEventListener("click", () => openSubentityModal(contratoId, config, null, load));
     head.appendChild(btnAdd);
     section.appendChild(head);
@@ -53,25 +61,28 @@ export function renderSubentityPanel(contratoId, config) {
                 const wrap = document.createElement("div");
                 wrap.style.display = "flex";
                 wrap.style.gap = "6px";
-                const edit = document.createElement("button");
-                edit.className = "btn btn--ghost btn--sm";
-                edit.textContent = "Editar";
-                edit.addEventListener("click", (e) => { e.stopPropagation(); openSubentityModal(contratoId, config, row, load); });
+                if (!config.noEdit) {
+                    const edit = document.createElement("button");
+                    edit.className = "btn btn--ghost btn--sm";
+                    edit.textContent = "Editar";
+                    edit.addEventListener("click", (e) => { e.stopPropagation(); openSubentityModal(contratoId, config, row, load); });
+                    wrap.appendChild(edit);
+                }
                 const del = document.createElement("button");
                 del.className = "btn btn--danger btn--sm";
-                del.textContent = "Baja";
+                del.textContent = config.deleteLabel || "Baja";
                 del.addEventListener("click", async (e) => {
                     e.stopPropagation();
-                    if (!confirm(`¿Dar de baja este registro de ${config.singular.toLowerCase()}?`)) return;
+                    const ask = config.deleteConfirm || `¿Dar de baja este registro de ${config.singular.toLowerCase()}?`;
+                    if (!confirm(ask)) return;
                     try {
-                        await api.del(config.itemPath(contratoId, row.id));
+                        await api.del(config.itemPath(contratoId, row));
                         showToast("Registro dado de baja", "success");
                         load();
                     } catch (err) {
                         showToast("Error: " + (err.message || ""), "error");
                     }
                 });
-                wrap.appendChild(edit);
                 wrap.appendChild(del);
                 return wrap;
             },
@@ -81,7 +92,10 @@ export function renderSubentityPanel(contratoId, config) {
     async function load() {
         try {
             const res = await api.get(config.path(contratoId));
-            renderTable(tableContainer, columns, res.data || [], { emptyText: `Sin ${config.title.toLowerCase()}` });
+            // Los listados devuelven las FK crudas (un UUID no le dice nada a
+            // nadie); enrich las resuelve a etiquetas legibles antes de pintar.
+            const rows = config.enrich ? await config.enrich(contratoId, res.data || []) : (res.data || []);
+            renderTable(tableContainer, columns, rows, { emptyText: `Sin ${config.title.toLowerCase()}` });
         } catch (err) {
             console.error(err);
             renderTable(tableContainer, columns, [], { emptyText: `Error al cargar ${config.title.toLowerCase()}` });
@@ -147,13 +161,14 @@ async function openSubentityModal(contratoId, config, item, onSaved) {
             if (payload[k] !== undefined && payload[k] !== "") payload[k] = Number(payload[k]);
         });
         try {
-            if (isEdit) {
-                await api.put(config.itemPath(contratoId, item.id), payload);
-                showToast(`${config.singular} actualizada`, "success");
-            } else {
-                await api.post(config.path(contratoId), payload);
-                showToast(`${config.singular} creada`, "success");
-            }
+            const done = config.gender === "m" ? ["creado", "actualizado"] : ["creada", "actualizada"];
+            const res = isEdit
+                ? await api.put(config.itemPath(contratoId, item), payload)
+                : await api.post(config.path(contratoId), payload);
+            showToast(`${config.singular} ${isEdit ? done[1] : done[0]}`, "success");
+            // Reglas BLANDAS del backend (p.ej. 2ª prestación PRINCIPAL en el mismo
+            // ámbito): la fila se guardó igual, pero el aviso solo existe aquí.
+            (res.warnings || []).forEach(w => showToast(w, "warning"));
             modal.close();
             onSaved();
         } catch (err) {

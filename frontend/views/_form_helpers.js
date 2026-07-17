@@ -2,8 +2,15 @@
 //   - create mode (isEdit=false): id rendered as an editable required input.
 //   - edit mode   (isEdit=true):  id rendered as a static text display — never an input,
 //     so it cannot appear in FormData or reach the PUT payload.
+//
+// A field marked `immutable: true` follows the same policy as `id`: settable on
+// create, static text on edit. For items_contrato.numero_item this is not just
+// cosmetic — it derives the row id, so changing it would have to be a
+// delete + recreate, and the backend rejects it in the PUT payload.
 
 const NEVER_IN_UPDATE = new Set(["id", "created_at", "updated_at"]);
+
+const isStatic = (f, isEdit) => isEdit && (f.name === "id" || f.immutable);
 
 /**
  * Appends field DOM elements to `container` based on a `fields` descriptor array.
@@ -15,12 +22,12 @@ export function buildFormFields(container, fields, record, isEdit) {
         group.className = "form-group" + (f.fullWidth ? " full-width" : "");
 
         const label = document.createElement("label");
-        const showAsterisk = f.required && !(f.name === "id" && isEdit);
+        const showAsterisk = f.required && !isStatic(f, isEdit);
         label.textContent = f.label + (showAsterisk ? " *" : "");
         group.appendChild(label);
 
         let el;
-        if (f.name === "id" && isEdit) {
+        if (isStatic(f, isEdit)) {
             el = document.createElement("span");
             el.className = "form-value-static";
             el.textContent = record?.[f.name] ?? "—";
@@ -68,14 +75,14 @@ export function buildFormFields(container, fields, record, isEdit) {
 /**
  * Builds a payload object from the form's FormData.
  *
- * In edit mode, `id`, `created_at`, `updated_at` are always excluded — second defense layer
- * on top of `id` not being rendered as an input in edit mode.
+ * In edit mode, `id`, `created_at`, `updated_at` and any `immutable` field are always
+ * excluded — second defense layer on top of them not being rendered as inputs.
  */
 export function buildPayload(form, fields, isEdit) {
     const fd = new FormData(form);
     const payload = {};
     fields.forEach(f => {
-        if (isEdit && NEVER_IN_UPDATE.has(f.name)) return;
+        if (isEdit && (NEVER_IN_UPDATE.has(f.name) || f.immutable)) return;
         if (f.type === "multiselect") {
             // Siempre presente (incluso []) para permitir limpiar la selección al editar.
             payload[f.name] = fd.getAll(f.name);
